@@ -20,7 +20,7 @@ def inicializar_banco():
         id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT UNIQUE NOT NULL, senha TEXT NOT NULL
     )''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS configuracoes (
-        id INTEGER PRIMARY KEY, nome TEXT, cnpj TEXT, endereco TEXT, telefone TEXT, horario TEXT, mensagem TEXT, impressora_status TEXT, valor_diaria REAL DEFAULT 50.0, valor_van REAL DEFAULT 30.0, valor_pernoite REAL DEFAULT 40.0
+        id INTEGER PRIMARY KEY, nome TEXT, cnpj TEXT, endereco TEXT, telefone TEXT, horario TEXT, mensagem TEXT, impressora_status TEXT, valor_diaria REAL DEFAULT 50.0, valor_van REAL DEFAULT 30.0, valor_pernoite REAL DEFAULT 40.0, logo TEXT
     )''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS anuncios (
         id INTEGER PRIMARY KEY AUTOINCREMENT, texto TEXT
@@ -38,6 +38,8 @@ def inicializar_banco():
         cursor.execute("ALTER TABLE configuracoes ADD COLUMN valor_pernoite REAL DEFAULT 40.0")
     if 'impressora_status' not in cols_c:
         cursor.execute("ALTER TABLE configuracoes ADD COLUMN impressora_status TEXT")
+    if 'logo' not in cols_c:
+        cursor.execute("ALTER TABLE configuracoes ADD COLUMN logo TEXT")
 
     cols_v = [col[1] for col in cursor.execute("PRAGMA table_info(veiculos)").fetchall()]
     if 'valor' not in cols_v:
@@ -55,7 +57,7 @@ def inicializar_banco():
 
     cursor.execute("SELECT COUNT(*) FROM configuracoes")
     if cursor.fetchone()[0] == 0:
-        cursor.execute("INSERT INTO configuracoes (id, nome, cnpj, endereco, telefone, horario, mensagem, impressora_status, valor_diaria, valor_van, valor_pernoite) VALUES (1, 'NovaPark Pro', '00.000.000/0001-00', 'Rua Exemplo, 123', '(21) 99999-9999', '07:00-22:00', 'Seja Bem-Vindo!', 'Thermer Bluetooth', 50.0, 30.0, 40.0)")
+        cursor.execute("INSERT INTO configuracoes (id, nome, cnpj, endereco, telefone, horario, mensagem, impressora_status, valor_diaria, valor_van, valor_pernoite, logo) VALUES (1, 'NovaPark Pro', '00.000.000/0001-00', 'Rua Exemplo, 123', '(21) 99999-9999', '07:00-22:00', 'Seja Bem-Vindo!', 'Thermer Bluetooth', 50.0, 30.0, 40.0, '')")
 
     conn.commit()
     conn.close()
@@ -66,12 +68,13 @@ def get_dados():
     anuncios = conn.execute("SELECT * FROM anuncios").fetchall()
     ativos = conn.execute("SELECT * FROM veiculos WHERE status='ATIVO' ORDER BY id DESC").fetchall()
     concluidos = conn.execute("SELECT * FROM veiculos WHERE status='FINALIZADO' ORDER BY id DESC").fetchall()
+    usuarios = conn.execute("SELECT * FROM usuarios").fetchall()
     
     total_geral = conn.execute("SELECT COUNT(*) FROM veiculos").fetchone()[0]
     num_talao = f"{total_geral + 1:04d}"
     
     conn.close()
-    return cfg, anuncios, ativos, concluidos, num_talao
+    return cfg, anuncios, ativos, concluidos, num_talao, usuarios
 
 HTML_LOGIN = """
 <!DOCTYPE html>
@@ -146,8 +149,13 @@ HTML_DASHBOARD = """
     </style>
 </head>
 <body class="bg-light">
-    <div style="background-color: #d35400; color: white; text-align: center; padding: 8px; font-size: 14px; font-weight: bold;">
-        🅿️ {{ cfg.nome }} | <a href="/logout" class="text-white text-decoration-underline">Sair</a>
+    <div style="background-color: #d35400; color: white; text-align: center; padding: 8px; font-size: 14px; font-weight: bold; display: flex; justify-content: center; align-items: center; gap: 10px;">
+        {% if cfg.logo %}
+            <img src="{{ cfg.logo }}" alt="Logo" style="max-height: 25px; max-width: 100px; object-fit: contain; background: white; padding: 2px; border-radius: 3px;">
+        {% else %}
+            🅿️ {{ cfg.nome }}
+        {% endif %}
+        | <a href="/logout" class="text-white text-decoration-underline">Sair</a>
     </div>
     <div class="container mt-3">
         <div class="row mb-2">
@@ -379,7 +387,9 @@ HTML_DASHBOARD = """
     <!-- MODAL CONFIG -->
     <div class="modal fade" id="mConfig" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-body">
         <form action="/salvar_config" method="POST">
-            <label class="small">Nome do Estacionamento (Logo em Texto):</label><input name="nome" value="{{ cfg.nome }}" class="form-control mb-2" required>
+            <label class="small">Nome do Estacionamento:</label><input name="nome" value="{{ cfg.nome }}" class="form-control mb-2" required>
+            <label class="small fw-bold text-primary">URL / Link da Logo (Imagem):</label><input name="logo" value="{{ cfg.logo }}" class="form-control mb-2" placeholder="https://exemplo.com/logo.png">
+            
             <label class="small">CNPJ:</label><input name="cnpj" value="{{ cfg.cnpj }}" class="form-control mb-2">
             <label class="small">Endereço:</label><input name="endereco" value="{{ cfg.endereco }}" class="form-control mb-2">
             <label class="small">Telefone:</label><input name="telefone" value="{{ cfg.telefone }}" class="form-control mb-2">
@@ -394,8 +404,31 @@ HTML_DASHBOARD = """
             <label class="small">Mensagem:</label><input name="mensagem" value="{{ cfg.mensagem }}" class="form-control mb-2">
             <label class="small fw-bold text-primary">Impressora Bluetooth Portátil:</label>
             <input name="imp" value="{{ cfg.impressora_status }}" class="form-control mb-3" placeholder="Ex: Thermer" required>
-            <button class="btn btn-dark w-100 mb-2">Salvar Configurações</button>
+            <button class="btn btn-dark w-100 mb-3">Salvar Configurações</button>
         </form>
+
+        <hr>
+        <h6 class="fw-bold text-success">Gerenciar E-mails / Senhas de Acesso</h6>
+        <form action="/add_usuario" method="POST" class="mb-3">
+            <div class="input-group mb-1">
+                <input type="email" name="novo_email" class="form-control form-control-sm" placeholder="Novo e-mail" required>
+                <input type="text" name="nova_senha" class="form-control form-control-sm" placeholder="Nova senha" required>
+                <button class="btn btn-success btn-sm">Adicionar</button>
+            </div>
+        </form>
+        <ul class="list-group mb-3" style="max-height: 120px; overflow-y: auto;">
+            {% for u in usuarios %}
+            <li class="list-group-item d-flex justify-content-between align-items-center py-1 px-2 small">
+                <span>{{ u.email }}</span>
+                {% if usuarios|length > 1 %}
+                <a href="/del_usuario/{{ u.id }}" class="text-danger fw-bold text-decoration-none">Excluir</a>
+                {% else %}
+                <span class="text-muted">Principal</span>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+
         <a href="/dashboard" class="btn btn-secondary w-100">Fechar</a>
     </div></div></div></div>
 
@@ -455,15 +488,15 @@ def cadastro():
 def dashboard():
     if 'email' not in session:
         return redirect(url_for('login'))
-    cfg, anuncios, ativos, concluidos, talao_atual = get_dados()
-    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, qr_entrada=None, saida_recente=None)
+    cfg, anuncios, ativos, concluidos, talao_atual, usuarios = get_dados()
+    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, usuarios=usuarios, qr_entrada=None, saida_recente=None)
 
 @app.route('/entrada', methods=['GET', 'POST'])
 def entrada():
     if 'email' not in session:
         return redirect(url_for('login'))
     
-    cfg, anuncios, ativos, concluidos, talao_atual = get_dados()
+    cfg, anuncios, ativos, concluidos, talao_atual, usuarios = get_dados()
     
     if request.method == 'POST':
         placa = request.form.get('placa', '').upper().strip()
@@ -477,10 +510,10 @@ def entrada():
         conn.commit()
         conn.close()
         
-        cfg, anuncios, ativos, concluidos, talao_atual = get_dados()
+        cfg, anuncios, ativos, concluidos, talao_atual, usuarios = get_dados()
         qr_texto = f"PLACA:{placa}|ENTRADA:{hora}"
         
-        return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, qr_entrada=qr_texto, placa_recente=placa, modelo_recente=modelo, cor_recente=cor, valor_recente=valor, saida_recente=None)
+        return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, usuarios=usuarios, qr_entrada=qr_texto, placa_recente=placa, modelo_recente=modelo, cor_recente=cor, valor_recente=valor, saida_recente=None)
     
     return redirect(url_for('dashboard'))
 
@@ -494,6 +527,7 @@ def reimprimir(id):
     anuncios = conn.execute("SELECT * FROM anuncios").fetchall()
     ativos = conn.execute("SELECT * FROM veiculos WHERE status='ATIVO' ORDER BY id DESC").fetchall()
     concluidos = conn.execute("SELECT * FROM veiculos WHERE status='FINALIZADO' ORDER BY id DESC").fetchall()
+    usuarios = conn.execute("SELECT * FROM usuarios").fetchall()
     total_geral = conn.execute("SELECT COUNT(*) FROM veiculos").fetchone()[0]
     talao_atual = f"{total_geral:04d}"
     conn.close()
@@ -502,7 +536,7 @@ def reimprimir(id):
         return redirect(url_for('dashboard'))
 
     qr_texto = f"PLACA:{v['placa']}|ENTRADA:{v['hora_entrada']}"
-    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, qr_entrada=qr_texto, placa_recente=v['placa'], modelo_recente=v['modelo'], cor_recente=v['cor'], valor_recente=v['valor'], saida_recente=None)
+    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, usuarios=usuarios, qr_entrada=qr_texto, placa_recente=v['placa'], modelo_recente=v['modelo'], cor_recente=v['cor'], valor_recente=v['valor'], saida_recente=None)
 
 @app.route('/saida_scanner', methods=['POST'])
 def saida_scanner():
@@ -543,13 +577,14 @@ def saida_scanner():
     anuncios = conn.execute("SELECT * FROM anuncios").fetchall()
     ativos = conn.execute("SELECT * FROM veiculos WHERE status='ATIVO' ORDER BY id DESC").fetchall()
     concluidos = conn.execute("SELECT * FROM veiculos WHERE status='FINALIZADO' ORDER BY id DESC").fetchall()
+    usuarios = conn.execute("SELECT * FROM usuarios").fetchall()
     total_geral = conn.execute("SELECT COUNT(*) FROM veiculos").fetchone()[0]
     talao_atual = f"{total_geral:04d}"
     
     v_atualizado = conn.execute("SELECT * FROM veiculos WHERE id=:id", {"id": v['id']}).fetchone()
     conn.close()
     
-    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, saida_recente=v_atualizado, qr_entrada=None)
+    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, usuarios=usuarios, saida_recente=v_atualizado, qr_entrada=None)
 
 @app.route('/editar/<int:id>', methods=['POST'])
 def editar(id):
@@ -577,7 +612,7 @@ def salvar_config():
         return redirect(url_for('login'))
     try:
         conn = obter_conexao()
-        conn.execute("UPDATE configuracoes SET nome=?, cnpj=?, endereco=?, telefone=?, horario=?, mensagem=?, impressora_status=?, valor_diaria=?, valor_van=?, valor_pernoite=? WHERE id=1",
+        conn.execute("UPDATE configuracoes SET nome=?, cnpj=?, endereco=?, telefone=?, horario=?, mensagem=?, impressora_status=?, valor_diaria=?, valor_van=?, valor_pernoite=?, logo=? WHERE id=1",
                      (
                          request.form.get('nome', ''),
                          request.form.get('cnpj', ''),
@@ -588,13 +623,42 @@ def salvar_config():
                          request.form.get('imp', ''),
                          float(request.form.get('valor_diaria', 50.0)),
                          float(request.form.get('valor_van', 30.0)),
-                         float(request.form.get('valor_pernoite', 40.0))
+                         float(request.form.get('valor_pernoite', 40.0)),
+                         request.form.get('logo', '')
                      ))
         conn.commit()
         conn.close()
         return redirect(url_for('dashboard'))
     except Exception as e:
         return f"Erro ao salvar configurações: {e}. <a href='/dashboard'>Voltar</a>"
+
+@app.route('/add_usuario', methods=['POST'])
+def add_usuario():
+    if 'email' not in session:
+        return redirect(url_for('login'))
+    email = request.form.get('novo_email', '').strip()
+    senha = request.form.get('nova_senha', '').strip()
+    if email and senha:
+        try:
+            conn = obter_conexao()
+            conn.execute("INSERT INTO usuarios (email, senha) VALUES (?, ?)", (email, senha))
+            conn.commit()
+            conn.close()
+        except:
+            pass
+    return redirect(url_for('dashboard'))
+
+@app.route('/del_usuario/<int:id>')
+def del_usuario(id):
+    if 'email' not in session:
+        return redirect(url_for('login'))
+    conn = obter_conexao()
+    total_users = conn.execute("SELECT COUNT(*) FROM usuarios").fetchone()[0]
+    if total_users > 1:
+        conn.execute("DELETE FROM usuarios WHERE id=?", (id,))
+        conn.commit()
+    conn.close()
+    return redirect(url_for('dashboard'))
 
 @app.route('/add_anuncio', methods=['POST'])
 def add_anuncio():
