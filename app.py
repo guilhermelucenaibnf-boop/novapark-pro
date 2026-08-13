@@ -1,5 +1,5 @@
-
 import sqlite3
+import os
 from datetime import datetime
 from flask import Flask, render_template_string, request, redirect, url_for, session
 
@@ -67,7 +67,6 @@ def get_dados():
     ativos = conn.execute("SELECT * FROM veiculos WHERE status='ATIVO' ORDER BY id DESC").fetchall()
     concluidos = conn.execute("SELECT * FROM veiculos WHERE status='FINALIZADO' ORDER BY id DESC").fetchall()
     
-    # Pega o próximo ID global gerado ou total de registros criados para simular o Nº do Talão atual
     total_geral = conn.execute("SELECT COUNT(*) FROM veiculos").fetchone()[0]
     num_talao = f"{total_geral + 1:04d}"
     
@@ -610,7 +609,37 @@ def salvar_config():
                      ))
         conn.commit()
         conn.close()
+        return redirect(url_for('dashboard'))
     except Exception as e:
-     return f"Erro ao salvar configurações: {e}. <a href='/dashboard'>Voltar</a>"
-        
+        return f"Erro ao salvar configurações: {e}. <a href='/dashboard'>Voltar</a>"
+
 @app.route('/add_anuncio', methods=['POST'])
+def add_anuncio():
+    if 'email' not in session:
+        return redirect(url_for('login'))
+    texto = request.form.get('texto', '').strip()
+    if texto:
+        conn = obter_conexao()
+        conn.execute("INSERT INTO anuncios (texto) VALUES (?)", (texto,))
+        conn.commit()
+        conn.close()
+    return redirect(url_for('dashboard'))
+
+@app.route('/del_anuncio/<int:id>')
+def del_anuncio(id):
+    if 'email' not in session:
+        return redirect(url_for('login'))
+    conn = obter_conexao()
+    conn.execute("DELETE FROM anuncios WHERE id=?", (id,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('dashboard'))
+
+@app.route('/logout')
+def logout():
+    session.pop('email', None)
+    return redirect(url_for('login'))
+
+if __name__ == '__main__':
+    inicializar_banco()
+    app.run(host='0.0.0.0', port=5000)
