@@ -55,7 +55,7 @@ def inicializar_banco():
 
     cursor.execute("SELECT COUNT(*) FROM configuracoes")
     if cursor.fetchone()[0] == 0:
-        cursor.execute("INSERT INTO configuracoes (id, nome, cnpj, endereco, telefone, horario, mensagem, impressora_status, valor_diaria, valor_van, valor_pernoite) VALUES (1, 'GLPPARK PRO', '00.000.000/0001-00', 'Rua Exemplo, 123', '(21) 99999-9999', '07:00-22:00', 'Seja Bem-Vindo!', 'Thermer Bluetooth', 50.0, 30.0, 40.0)")
+        cursor.execute("INSERT INTO configuracoes (id, nome, cnpj, endereco, telefone, horario, mensagem, impressora_status, valor_diaria, valor_van, valor_pernoite) VALUES (1, 'Glppark', '00.000.000/0001-00', 'Rua Exemplo, 123', '(21) 99999-9999', '07:00-22:00', 'Seja Bem-Vindo!', 'Thermer Bluetooth', 50.0, 30.0, 40.0)")
 
     conn.commit()
     conn.close()
@@ -78,13 +78,13 @@ HTML_LOGIN = """
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Glppark Pro</title>
+    <title>Login - Glppark</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>.eye-btn { cursor: pointer; position: absolute; right: 15px; top: 35px; }</style>
 </head>
 <body class="bg-light d-flex align-items-center justify-content-center vh-100">
     <div class="card shadow p-4" style="width: 100%; max-width: 400px;">
-        <h3 class="text-center mb-4 fw-bold text-primary">🚗 Glppark Pro</h3>
+        <h3 class="text-center mb-4 fw-bold text-primary">🚗 Glppark</h3>
         <form action="/fazer_login" method="POST">
             <div class="mb-3"><label class="form-label">E-mail</label><input type="email" name="email" class="form-control" required></div>
             <div class="mb-3 position-relative">
@@ -105,7 +105,7 @@ HTML_CADASTRO = """
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cadastro - Glppark Pro</title>
+    <title>Cadastro - Glppark</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>.eye-btn { cursor: pointer; position: absolute; right: 15px; top: 35px; }</style>
 </head>
@@ -132,7 +132,7 @@ HTML_DASHBOARD = """
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel - Glppark Pro</title>
+    <title>Painel - Glppark</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
