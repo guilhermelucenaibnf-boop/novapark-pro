@@ -1,4 +1,4 @@
-import os
+
 import sqlite3
 from datetime import datetime
 from flask import Flask, render_template_string, request, redirect, url_for, session
@@ -615,30 +615,3 @@ def salvar_config():
     return redirect(url_for('dashboard'))
 
 @app.route('/add_anuncio', methods=['POST'])
-def add_anuncio():
-    if 'email' not in session:
-        return redirect(url_for('login'))
-    conn = obter_conexao()
-    conn.execute("INSERT INTO anuncios (texto) VALUES (?)", (request.form['texto'],))
-    conn.commit()
-    conn.close()
-    return redirect(url_for('dashboard'))
-
-@app.route('/del_anuncio/<int:id>')
-def del_anuncio(id):
-    if 'email' not in session:
-        return redirect(url_for('login'))
-    conn = obter_conexao()
-    conn.execute("DELETE FROM anuncios WHERE id=?", (id,))
-    conn.commit()
-    conn.close()
-    return redirect(url_for('dashboard'))
-
-@app.route('/logout')
-def logout():
-    session.pop('email', None)
-    return redirect(url_for('login'))
-
-if __name__ == '__main__':
-    inicializar_banco()
-    app.run(host='0.0.0.0', port=5000)
