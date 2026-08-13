@@ -55,7 +55,7 @@ def inicializar_banco():
 
     cursor.execute("SELECT COUNT(*) FROM configuracoes")
     if cursor.fetchone()[0] == 0:
-        cursor.execute("INSERT INTO configuracoes (id, nome, cnpj, endereco, telefone, horario, mensagem, impressora_status, valor_diaria, valor_van, valor_pernoite) VALUES (1, 'Glppark', '00.000.000/0001-00', 'Rua Exemplo, 123', '(21) 99999-9999', '07:00-22:00', 'Seja Bem-Vindo!', 'Thermer Bluetooth', 50.0, 30.0, 40.0)")
+        cursor.execute("INSERT INTO configuracoes (id, nome, cnpj, endereco, telefone, horario, mensagem, impressora_status, valor_diaria, valor_van, valor_pernoite) VALUES (1, 'NovaPark Pro', '00.000.000/0001-00', 'Rua Exemplo, 123', '(21) 99999-9999', '07:00-22:00', 'Seja Bem-Vindo!', 'Thermer Bluetooth', 50.0, 30.0, 40.0)")
 
     conn.commit()
     conn.close()
@@ -78,13 +78,13 @@ HTML_LOGIN = """
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Glppark</title>
+    <title>Login - NovaPark Pro</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>.eye-btn { cursor: pointer; position: absolute; right: 15px; top: 35px; }</style>
 </head>
 <body class="bg-light d-flex align-items-center justify-content-center vh-100">
     <div class="card shadow p-4" style="width: 100%; max-width: 400px;">
-        <h3 class="text-center mb-4 fw-bold text-primary">🚗 Glppark</h3>
+        <h3 class="text-center mb-4 fw-bold text-primary">🚗 NovaPark Pro</h3>
         <form action="/fazer_login" method="POST">
             <div class="mb-3"><label class="form-label">E-mail</label><input type="email" name="email" class="form-control" required></div>
             <div class="mb-3 position-relative">
@@ -105,7 +105,7 @@ HTML_CADASTRO = """
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cadastro - Glppark</title>
+    <title>Cadastro - NovaPark Pro</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>.eye-btn { cursor: pointer; position: absolute; right: 15px; top: 35px; }</style>
 </head>
@@ -132,7 +132,7 @@ HTML_DASHBOARD = """
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel - Glppark</title>
+    <title>Painel - NovaPark Pro</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
@@ -146,8 +146,8 @@ HTML_DASHBOARD = """
     </style>
 </head>
 <body class="bg-light">
-    <div style="background-color: #d35400; color: white; text-align: center; padding: 6px; font-size: 13px; font-weight: bold;">
-        {{ cfg.nome }} | <a href="/logout" class="text-white">Sair</a>
+    <div style="background-color: #d35400; color: white; text-align: center; padding: 8px; font-size: 14px; font-weight: bold;">
+        🅿️ {{ cfg.nome }} | <a href="/logout" class="text-white text-decoration-underline">Sair</a>
     </div>
     <div class="container mt-3">
         <div class="row mb-2">
@@ -181,46 +181,27 @@ HTML_DASHBOARD = """
                     <option value="Fiat Argo">Fiat Argo</option>
                     <option value="Fiat Strada">Fiat Strada</option>
                     <option value="Fiat Toro">Fiat Toro</option>
-                    <option value="Fiat Fiorino">Fiat Fiorino</option>
                 </optgroup>
                 <optgroup label="Volkswagen">
                     <option value="VW Gol">VW Gol</option>
                     <option value="VW Polo">VW Polo</option>
                     <option value="VW Saveiro">VW Saveiro</option>
-                    <option value="VW Voyage">VW Voyage</option>
                     <option value="VW T-Cross">VW T-Cross</option>
                     <option value="VW Nivus">VW Nivus</option>
-                    <option value="VW Fox">VW Fox</option>
                 </optgroup>
                 <optgroup label="Chevrolet">
                     <option value="Chevrolet Onix">Chevrolet Onix</option>
                     <option value="Chevrolet Prisma">Chevrolet Prisma</option>
                     <option value="Chevrolet Tracker">Chevrolet Tracker</option>
                     <option value="Chevrolet S10">Chevrolet S10</option>
-                    <option value="Chevrolet Montana">Chevrolet Montana</option>
-                    <option value="Chevrolet Classic">Chevrolet Classic</option>
                 </optgroup>
-                <optgroup label="Hyundai">
+                <optgroup label="Hyundai / Toyota / Honda">
                     <option value="Hyundai HB20">Hyundai HB20</option>
                     <option value="Hyundai Creta">Hyundai Creta</option>
-                    <option value="Hyundai Tucson">Hyundai Tucson</option>
-                </optgroup>
-                <optgroup label="Toyota / Honda">
                     <option value="Toyota Corolla">Toyota Corolla</option>
                     <option value="Toyota Hilux">Toyota Hilux</option>
-                    <option value="Toyota Etios">Toyota Etios</option>
                     <option value="Honda Civic">Honda Civic</option>
-                    <option value="Honda Fit">Honda Fit</option>
                     <option value="Honda HR-V">Honda HR-V</option>
-                </optgroup>
-                <optgroup label="Renault / Ford / Jeep">
-                    <option value="Renault Kwid">Renault Kwid</option>
-                    <option value="Renault Sandero">Renault Sandero</option>
-                    <option value="Renault Logan">Renault Logan</option>
-                    <option value="Ford Ka">Ford Ka</option>
-                    <option value="Ford Ranger">Ford Ranger</option>
-                    <option value="Jeep Renegade">Jeep Renegade</option>
-                    <option value="Jeep Compass">Jeep Compass</option>
                 </optgroup>
                 <optgroup label="Outros / Motos">
                     <option value="Moto Honda CG">Moto Honda CG</option>
@@ -239,10 +220,6 @@ HTML_DASHBOARD = """
                 <option value="Cinza">Cinza</option>
                 <option value="Vermelho">Vermelho</option>
                 <option value="Azul">Azul</option>
-                <option value="Verde">Verde</option>
-                <option value="Amarelo">Amarelo</option>
-                <option value="Marrom">Marrom</option>
-                <option value="Bege">Bege</option>
                 <option value="Outra Cor">Outra Cor</option>
             </select>
 
@@ -257,7 +234,7 @@ HTML_DASHBOARD = """
         <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-body text-center bg-white p-4">
             
             <div id="printableArea">
-                <h5 class="fw-bold mb-1">{{ cfg.nome }}</h5>
+                <h4 class="fw-bold mb-1">🅿️ {{ cfg.nome }}</h4>
                 <p class="small mb-1">CNPJ: {{ cfg.cnpj }}</p>
                 <p class="small mb-1">{{ cfg.endereco }}</p>
                 <p class="small mb-2">Tel: {{ cfg.telefone }}</p>
@@ -272,7 +249,7 @@ HTML_DASHBOARD = """
                 <p class="small mb-2"><strong>Mensagem:</strong> {{ cfg.mensagem }}</p>
                 {% if anuncios %}
                 <hr style="border-top: dashed 1px #000;">
-                <p class="small text-muted mb-1"><strong>Anúncios / Avisos:</strong></p>
+                <p class="small text-muted mb-1"><strong>Avisos:</strong></p>
                 {% for a in anuncios %}
                 <p class="small mb-1">- {{ a.texto }}</p>
                 {% endfor %}
@@ -297,7 +274,7 @@ HTML_DASHBOARD = """
         <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-body text-center bg-white p-4">
             
             <div id="printableArea">
-                <h5 class="fw-bold mb-1">{{ cfg.nome }}</h5>
+                <h4 class="fw-bold mb-1">🅿️ {{ cfg.nome }}</h4>
                 <p class="small mb-1">CNPJ: {{ cfg.cnpj }}</p>
                 <p class="small mb-1">{{ cfg.endereco }}</p>
                 <p class="small mb-2">Tel: {{ cfg.telefone }}</p>
@@ -310,7 +287,7 @@ HTML_DASHBOARD = """
                 <p class="small mb-2"><strong>Mensagem:</strong> {{ cfg.mensagem }}</p>
                 {% if anuncios %}
                 <hr style="border-top: dashed 1px #000;">
-                <p class="small text-muted mb-1"><strong>Anúncios / Avisos:</strong></p>
+                <p class="small text-muted mb-1"><strong>Avisos:</strong></p>
                 {% for a in anuncios %}
                 <p class="small mb-1">- {{ a.texto }}</p>
                 {% endfor %}
@@ -328,9 +305,9 @@ HTML_DASHBOARD = """
     </div>
     {% endif %}
 
-    <!-- MODAL SAÍDA COM CÂMERA SCANNER E ENTRADA MANUAL -->
+    <!-- MODAL SAÍDA COM CÂMERA TRASEIRA SCANNER -->
     <div class="modal fade" id="mSaida" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-body text-center">
-        <h5 class="fw-bold mb-3">Escanear ou Digitar Saída</h5>
+        <h5 class="fw-bold mb-3">Escanear QR Code (Câmera Traseira)</h5>
         <div id="reader" style="width: 100%;"></div>
         
         <form action="/saida_scanner" method="POST" class="mt-3">
@@ -346,7 +323,13 @@ HTML_DASHBOARD = """
                 document.forms[document.forms.length - 1].submit();
             }
             try {
-                let html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 225 });
+                let html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
+                    fps: 10, 
+                    qrbox: 225,
+                    videoConstraints: {
+                        facingMode: "environment"
+                    }
+                });
                 html5QrcodeScanner.render(onScanSuccess);
             } catch (e) {
                 console.log("Câmera indisponível.");
@@ -396,7 +379,7 @@ HTML_DASHBOARD = """
     <!-- MODAL CONFIG -->
     <div class="modal fade" id="mConfig" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-body">
         <form action="/salvar_config" method="POST">
-            <label class="small">Nome:</label><input name="nome" value="{{ cfg.nome }}" class="form-control mb-2" required>
+            <label class="small">Nome do Estacionamento (Logo em Texto):</label><input name="nome" value="{{ cfg.nome }}" class="form-control mb-2" required>
             <label class="small">CNPJ:</label><input name="cnpj" value="{{ cfg.cnpj }}" class="form-control mb-2">
             <label class="small">Endereço:</label><input name="endereco" value="{{ cfg.endereco }}" class="form-control mb-2">
             <label class="small">Telefone:</label><input name="telefone" value="{{ cfg.telefone }}" class="form-control mb-2">
