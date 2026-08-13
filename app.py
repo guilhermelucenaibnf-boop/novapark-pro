@@ -611,6 +611,6 @@ def salvar_config():
         conn.commit()
         conn.close()
     except Exception as e:
-        return f"Erro ao salvar configurações: {e}. <a href='/dashboard'>Volta
-
+     return f"Erro ao salvar configurações: {e}. <a href='/dashboard'>Voltar</a>"
+        
 @app.route('/add_anuncio', methods=['POST'])
