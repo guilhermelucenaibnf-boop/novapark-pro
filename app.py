@@ -20,13 +20,12 @@ def inicializar_banco():
         id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT UNIQUE NOT NULL, senha TEXT NOT NULL
     )''')
     
-    # FORÇA A INSERÇÃO DO SEU E-MAIL E SENHA ADMINISTRATIVA
     try:
         cursor.execute("INSERT INTO usuarios (email, senha) VALUES (?, ?)", 
                        ('Jaymepinheiro7854@gmail.com', '21971767894'))
         conn.commit()
     except sqlite3.IntegrityError:
-        pass # Se já existir, apenas ignora e segue
+        pass
 
     cursor.execute('''CREATE TABLE IF NOT EXISTS configuracoes (
         id INTEGER PRIMARY KEY, nome TEXT, cnpj TEXT, endereco TEXT, telefone TEXT, horario TEXT, mensagem TEXT, impressora_status TEXT, valor_diaria REAL DEFAULT 50.0, valor_van REAL DEFAULT 30.0, valor_pernoite REAL DEFAULT 40.0, logo TEXT
@@ -658,7 +657,7 @@ def del_usuario(id):
     conn = obter_conexao()
     total_users = conn.execute("SELECT COUNT(*) FROM usuarios").fetchone()[0]
     if total_users > 1:
-        conn.execute("DELETE FROM usuarios WHERE id=DELETE FROM usuarios WHERE id=?", (id,)) # Ajustado para integridade
+        conn.execute("DELETE FROM usuarios WHERE id=?", (id,))
         conn.commit()
     conn.close()
     return redirect(url_for('dashboard'))
