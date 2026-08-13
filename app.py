@@ -608,31 +608,33 @@ def excluir(id):
     conn.close()
     return redirect(url_for('dashboard'))
 
-@app.route('/salvar_config', methods=['POST'])
+@app.route('/salvar_config', methods=['GET', 'POST'])
 def salvar_config():
     if 'email' not in session:
         return redirect(url_for('login'))
-    try:
-        conn = obter_conexao()
-        conn.execute("UPDATE configuracoes SET nome=?, cnpj=?, endereco=?, telefone=?, horario=?, mensagem=?, impressora_status=?, valor_diaria=?, valor_van=?, valor_pernoite=?, logo=? WHERE id=1",
-                     (
-                         request.form.get('nome', ''),
-                         request.form.get('cnpj', ''),
-                         request.form.get('endereco', ''),
-                         request.form.get('telefone', ''),
-                         request.form.get('horario', ''),
-                         request.form.get('mensagem', ''),
-                         request.form.get('imp', ''),
-                         float(request.form.get('valor_diaria', 50.0)),
-                         float(request.form.get('valor_van', 30.0)),
-                         float(request.form.get('valor_pernoite', 40.0)),
-                         request.form.get('logo', '')
-                     ))
-        conn.commit()
-        conn.close()
-        return redirect(url_for('dashboard'))
-    except Exception as e:
-        return f"Erro ao salvar configurações: {e}. <a href='/dashboard'>Voltar</a>"
+    if request.method == 'POST':
+        try:
+            conn = obter_conexao()
+            conn.execute("UPDATE configuracoes SET nome=?, cnpj=?, endereco=?, telefone=?, horario=?, mensagem=?, impressora_status=?, valor_diaria=?, valor_van=?, valor_pernoite=?, logo=? WHERE id=1",
+                         (
+                             request.form.get('nome', ''),
+                             request.form.get('cnpj', ''),
+                             request.form.get('endereco', ''),
+                             request.form.get('telefone', ''),
+                             request.form.get('horario', ''),
+                             request.form.get('mensagem', ''),
+                             request.form.get('imp', ''),
+                             float(request.form.get('valor_diaria', 50.0)),
+                             float(request.form.get('valor_van', 30.0)),
+                             float(request.form.get('valor_pernoite', 40.0)),
+                             request.form.get('logo', '')
+                         ))
+            conn.commit()
+            conn.close()
+            return redirect(url_for('dashboard'))
+        except Exception as e:
+            return f"Erro ao salvar configurações: {e}. <a href='/dashboard'>Voltar</a>"
+    return redirect(url_for('dashboard'))
 
 @app.route('/add_usuario', methods=['POST'])
 def add_usuario():
@@ -692,3 +694,4 @@ def logout():
 if __name__ == '__main__':
     inicializar_banco()
     app.run(host='0.0.0.0', port=5000)
+
