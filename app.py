@@ -40,7 +40,6 @@ def inicializar_banco():
         id INTEGER PRIMARY KEY AUTOINCREMENT, placa TEXT NOT NULL, modelo TEXT, cor TEXT, valor REAL DEFAULT 10.0, hora_entrada TEXT, hora_saida TEXT, valor_total REAL, status TEXT DEFAULT 'ATIVO'
     )''')
     
-    # Garantir colunas em configuracoes
     cols_c = [col[1] for col in cursor.execute("PRAGMA table_info(configuracoes)").fetchall()]
     if 'valor_diaria' not in cols_c: cursor.execute("ALTER TABLE configuracoes ADD COLUMN valor_diaria REAL DEFAULT 50.0")
     if 'valor_van' not in cols_c: cursor.execute("ALTER TABLE configuracoes ADD COLUMN valor_van REAL DEFAULT 30.0")
@@ -48,7 +47,6 @@ def inicializar_banco():
     if 'impressora_status' not in cols_c: cursor.execute("ALTER TABLE configuracoes ADD COLUMN impressora_status TEXT")
     if 'logo' not in cols_c: cursor.execute("ALTER TABLE configuracoes ADD COLUMN logo TEXT")
 
-    # Garantir colunas em veiculos
     cols_v = [col[1] for col in cursor.execute("PRAGMA table_info(veiculos)").fetchall()]
     if 'valor' not in cols_v: cursor.execute("ALTER TABLE veiculos ADD COLUMN valor REAL DEFAULT 10.0")
     if 'modelo' not in cols_v: cursor.execute("ALTER TABLE veiculos ADD COLUMN modelo TEXT")
@@ -687,7 +685,7 @@ def del_usuario(id):
     conn = obter_conexao()
     total_users = conn.execute("SELECT COUNT(*) FROM usuarios").fetchone()[0]
     if total_users > 1:
-        conn.execute("DELETE FROM usuarios WHERE id=`, (id,))" # Corrigido abaixo
+        conn.execute("DELETE FROM usuarios WHERE id=?", (id,))
         conn.commit()
     conn.close()
     return redirect(url_for('dashboard'))
