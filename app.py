@@ -526,14 +526,16 @@ def entrada():
     if request.method == 'POST':
         placa = request.form.get('placa', '').upper().strip()
         modelo = request.form.get('modelo', '')
-        cor = request.form.get('cor', '')
-        valor = float(request.form.get('valor', cfg.valor_diaria))
+                try:
+            valor = float(request.form.get('valor', cfg.valor_diaria))
+        except ValueError:
+            valor = float(cfg.valor_diaria)
+            
         hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         conn = obter_conexao()
-        conn.execute("INSERT INTO veiculos (placa, modelo, cor, valor, hora_entrada) VALUES (?, ?, ?, ?, ?)", (placa, modelo, cor, valor, hora))
-        conn.commit()
-        conn.close()
+        conn.execute("INSERT INTO veiculos (placa, modelo, cor, valor, hora_entrada, status) VALUES (?, ?, ?, ?, ?, ?)", (placa, modelo, cor, valor, hora, 'ATIVO'))
+
         
         cfg, anuncios, ativos, concluidos, talao_atual, usuarios = get_dados()
         qr_texto = f"PLACA:{placa}|ENTRADA:{hora}"
