@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import random
 from datetime import datetime
 from flask import Flask, render_template_string, request, redirect, url_for, session
 
@@ -75,7 +76,6 @@ def get_dados():
     
     conn.close()
     return cfg, anuncios, ativos, concluidos, num_talao, usuarios
-
 
 HTML_LOGIN = """
 <!DOCTYPE html>
@@ -573,8 +573,7 @@ def reimprimir(id):
     ativos = conn.execute("SELECT * FROM veiculos WHERE status='ATIVO' ORDER BY id DESC").fetchall()
     concluidos = conn.execute("SELECT * FROM veiculos WHERE status='FINALIZADO' ORDER BY id DESC").fetchall()
     usuarios = conn.execute("SELECT * FROM usuarios").fetchall()
-    total_geral = conn.execute("SELECT COUNT(*) FROM veiculos").fetchone()[0]
-    talao_atual = f"{total_geral:04d}"
+    talao_atual = f"{random.randint(10000, 99999)}"
     conn.close()
 
     if not v:
@@ -623,8 +622,7 @@ def saida_scanner():
     ativos = conn.execute("SELECT * FROM veiculos WHERE status='ATIVO' ORDER BY id DESC").fetchall()
     concluidos = conn.execute("SELECT * FROM veiculos WHERE status='FINALIZADO' ORDER BY id DESC").fetchall()
     usuarios = conn.execute("SELECT * FROM usuarios").fetchall()
-    total_geral = conn.execute("SELECT COUNT(*) FROM veiculos").fetchone()[0]
-    talao_atual = f"{total_geral:04d}"
+    talao_atual = f"{random.randint(10000, 99999)}"
     
     v_atualizado = conn.execute("SELECT * FROM veiculos WHERE id=:id", {"id": v['id']}).fetchone()
     conn.close()
