@@ -73,7 +73,6 @@ def get_dados():
     concluidos = conn.execute("SELECT * FROM veiculos WHERE status='FINALIZADO' ORDER BY id DESC").fetchall()
     usuarios = conn.execute("SELECT * FROM usuarios").fetchall()
     
-    # Gera um número totalmente aleatório entre 10000 e 99999 para o talão
     num_talao = f"{random.randint(10000, 99999)}"
     
     conn.close()
@@ -555,7 +554,6 @@ def entrada():
         except (ValueError, TypeError):
             valor = float(cfg['valor_diaria'] if cfg else 50.0)
 
-        # Horário da entrada
         hora = datetime.now(
             ZoneInfo("America/Sao_Paulo")
         ).strftime("%Y-%m-%d %H:%M:%S")
@@ -644,7 +642,7 @@ def saida_scanner():
         conn.close()
         return f"<h3>Veículo com placa '{placa}' não encontrado no pátio ativo.</h3><a href='/dashboard'>Voltar</a>"
 
-        fmt = "%Y-%m-%d %H:%M:%S"
+    fmt = "%Y-%m-%d %H:%M:%S"
 
     entrada_dt = datetime.strptime(
         v['hora_entrada'],
@@ -664,14 +662,7 @@ def saida_scanner():
     val_hora = v['valor'] if v['valor'] is not None else 10.0
     valor_final = horas * val_hora
     hora_saida_str = saida.strftime(fmt)
-    horas = tempo_total.total_seconds() / 3600
-    if horas < 0.1: horas = 0.1
-    
-    val_hora = v['valor'] if v['valor'] is not None else 10.0
-    valor_final = horas * val_hora
-    hora_saida_str = saida.strftime(fmt)
 
-    
     conn.execute("UPDATE veiculos SET status='FINALIZADO', hora_saida=?, valor_total=? WHERE id=?", (hora_saida_str, valor_final, v['id']))
     conn.commit()
     
@@ -790,8 +781,6 @@ def logout():
     session.pop('email', None)
     return redirect(url_for('login'))
 
-
-# Inicializa o banco de dados ao iniciar o aplicativo
 inicializar_banco()
 
 if __name__ == '__main__':
