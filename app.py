@@ -2,6 +2,8 @@ import sqlite3
 import os
 import random
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from flask import Flask, render_template_string, request, redirect, url_for, session
 
 app = Flask(__name__)
@@ -548,7 +550,8 @@ def entrada():
         except ValueError:
             valor = float(cfg['valor_diaria'] if cfg else 50.0)
             
-        hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                hora = datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%Y-%m-%d %H:%M:%S")
+
         
         conn = obter_conexao()
         conn.execute("INSERT INTO veiculos (placa, modelo, cor, valor, hora_entrada, status) VALUES (?, ?, ?, ?, ?, ?)", (placa, modelo, cor, valor, hora, 'ATIVO'))
@@ -605,7 +608,8 @@ def saida_scanner():
 
     fmt = "%Y-%m-%d %H:%M:%S"
     entrada_dt = datetime.strptime(v['hora_entrada'], fmt)
-    saida = datetime.now()
+        saida = datetime.now(ZoneInfo("America/Sao_Paulo"))
+
     tempo_total = saida - entrada_dt
     horas = tempo_total.total_seconds() / 3600
     if horas < 0.1: horas = 0.1
