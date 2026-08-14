@@ -69,10 +69,13 @@ def get_dados():
     ativos = conn.execute("SELECT * FROM veiculos WHERE status='ATIVO' ORDER BY id DESC").fetchall()
     concluidos = conn.execute("SELECT * FROM veiculos WHERE status='FINALIZADO' ORDER BY id DESC").fetchall()
     usuarios = conn.execute("SELECT * FROM usuarios").fetchall()
-    total_geral = conn.execute("SELECT COUNT(*) FROM veiculos").fetchone()[0]
-    num_talao = f"{total_geral + 1:04d}"
+    
+    # Gera um número totalmente aleatório entre 10000 e 99999 para o talão
+    num_talao = f"{random.randint(10000, 99999)}"
+    
     conn.close()
     return cfg, anuncios, ativos, concluidos, num_talao, usuarios
+
 
 HTML_LOGIN = """
 <!DOCTYPE html>
