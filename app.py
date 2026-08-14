@@ -16,6 +16,7 @@ def obter_conexao():
 def inicializar_banco():
     conn = obter_conexao()
     cursor = conn.cursor()
+    
     cursor.execute('''CREATE TABLE IF NOT EXISTS usuarios (
         id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT UNIQUE NOT NULL, senha TEXT NOT NULL
     )''')
@@ -30,25 +31,24 @@ def inicializar_banco():
     cursor.execute('''CREATE TABLE IF NOT EXISTS configuracoes (
         id INTEGER PRIMARY KEY, nome TEXT, cnpj TEXT, endereco TEXT, telefone TEXT, horario TEXT, mensagem TEXT, impressora_status TEXT, valor_diaria REAL DEFAULT 50.0, valor_van REAL DEFAULT 30.0, valor_pernoite REAL DEFAULT 40.0, logo TEXT
     )''')
+    
     cursor.execute('''CREATE TABLE IF NOT EXISTS anuncios (
         id INTEGER PRIMARY KEY AUTOINCREMENT, texto TEXT
     )''')
+    
     cursor.execute('''CREATE TABLE IF NOT EXISTS veiculos (
         id INTEGER PRIMARY KEY AUTOINCREMENT, placa TEXT NOT NULL, modelo TEXT, cor TEXT, valor REAL DEFAULT 10.0, hora_entrada TEXT, hora_saida TEXT, valor_total REAL, status TEXT DEFAULT 'ATIVO'
     )''')
     
+    # Garantir colunas em configuracoes
     cols_c = [col[1] for col in cursor.execute("PRAGMA table_info(configuracoes)").fetchall()]
     if 'valor_diaria' not in cols_c: cursor.execute("ALTER TABLE configuracoes ADD COLUMN valor_diaria REAL DEFAULT 50.0")
     if 'valor_van' not in cols_c: cursor.execute("ALTER TABLE configuracoes ADD COLUMN valor_van REAL DEFAULT 30.0")
     if 'valor_pernoite' not in cols_c: cursor.execute("ALTER TABLE configuracoes ADD COLUMN valor_pernoite REAL DEFAULT 40.0")
-    if 'impressora_status' not in cols_c: 
-        cursor.execute("ALTER TABLE configuracoes ADD COLUMN impressora_status TEXT")
-    try:
-        cursor.execute("ALTER TABLE configuracoes ADD COLUMN logo TEXT")
-        conn.commit()
-    except sqlite3.OperationalError:
-        pass
+    if 'impressora_status' not in cols_c: cursor.execute("ALTER TABLE configuracoes ADD COLUMN impressora_status TEXT")
+    if 'logo' not in cols_c: cursor.execute("ALTER TABLE configuracoes ADD COLUMN logo TEXT")
 
+    # Garantir colunas em veiculos
     cols_v = [col[1] for col in cursor.execute("PRAGMA table_info(veiculos)").fetchall()]
     if 'valor' not in cols_v: cursor.execute("ALTER TABLE veiculos ADD COLUMN valor REAL DEFAULT 10.0")
     if 'modelo' not in cols_v: cursor.execute("ALTER TABLE veiculos ADD COLUMN modelo TEXT")
@@ -150,10 +150,10 @@ HTML_DASHBOARD = """
 </head>
 <body class="bg-light">
     <div style="background-color: #d35400; color: white; text-align: center; padding: 8px; font-size: 14px; font-weight: bold; display: flex; justify-content: center; align-items: center; gap: 10px;">
-        {% if cfg.logo %}
+        {% if cfg and cfg.logo %}
             <img src="{{ cfg.logo }}" alt="Logo" style="max-height: 25px; max-width: 100px; object-fit: contain; background: white; padding: 2px; border-radius: 3px;">
         {% else %}
-            🅿️ {{ cfg.nome }}
+            🅿️ {{ cfg.nome if cfg else 'NovaPark' }}
         {% endif %}
         | <a href="/logout" class="text-white text-decoration-underline">Sair</a>
     </div>
@@ -233,13 +233,13 @@ HTML_DASHBOARD = """
 
             <label class="small fw-bold">Tipo de Cobrança / Tarifa:</label>
             <select name="tipo_tarifa" id="tipoTarifa" class="form-select mb-2" onchange="atualizarValorTarifa()" required>
-                <option value="diaria" data-valor="{{ cfg.valor_diaria }}">Diária (R$ {{ "%.2f"|format(cfg.valor_diaria) }})</option>
-                <option value="van" data-valor="{{ cfg.valor_van }}">Van / Caminh. (R$ {{ "%.2f"|format(cfg.valor_van) }})</option>
-                <option value="pernoite" data-valor="{{ cfg.valor_pernoite }}">Pernoite (R$ {{ "%.2f"|format(cfg.valor_pernoite) }})</option>
+                <option value="diaria" data-valor="{{ cfg.valor_diaria if cfg else 50.0 }}">Diária (R$ {{ "%.2f"|format(cfg.valor_diaria if cfg else 50.0) }})</option>
+                <option value="van" data-valor="{{ cfg.valor_van if cfg else 30.0 }}">Van / Caminh. (R$ {{ "%.2f"|format(cfg.valor_van if cfg else 30.0) }})</option>
+                <option value="pernoite" data-valor="{{ cfg.valor_pernoite if cfg else 40.0 }}">Pernoite (R$ {{ "%.2f"|format(cfg.valor_pernoite if cfg else 40.0) }})</option>
             </select>
 
             <label class="small">Valor Selecionado (R$):</label>
-            <input name="valor" id="inputValorTarifa" type="number" step="0.01" value="{{ cfg.valor_diaria }}" class="form-control mb-3" required>
+            <input name="valor" id="inputValorTarifa" type="number" step="0.01" value="{{ cfg.valor_diaria if cfg else 50.0 }}" class="form-control mb-3" required>
 
             <script>
                 function atualizarValorTarifa() {
@@ -259,15 +259,15 @@ HTML_DASHBOARD = """
         <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-body text-center bg-white p-4">
             
             <div id="printableArea">
-                {% if cfg.logo %}
+                {% if cfg and cfg.logo %}
                     <img src="{{ cfg.logo }}" alt="Logo" style="max-height: 40px; max-width: 150px; object-fit: contain; margin-bottom: 5px;"><br>
                     <span class="small fw-bold">{{ cfg.nome }}</span>
                 {% else %}
-                    <h4 class="fw-bold mb-1">🅿️ {{ cfg.nome }}</h4>
+                    <h4 class="fw-bold mb-1">🅿️ {{ cfg.nome if cfg else 'NovaPark' }}</h4>
                 {% endif %}
-                <p class="small mb-1">CNPJ: {{ cfg.cnpj }}</p>
-                <p class="small mb-1">{{ cfg.endereco }}</p>
-                <p class="small mb-2">Tel: {{ cfg.telefone }}</p>
+                <p class="small mb-1">CNPJ: {{ cfg.cnpj if cfg else '' }}</p>
+                <p class="small mb-1">{{ cfg.endereco if cfg else '' }}</p>
+                <p class="small mb-2">Tel: {{ cfg.telefone if cfg else '' }}</p>
                 <hr style="border-top: dashed 1px #000;">
                 <p class="fw-bold mb-1 text-uppercase">COMPROVANTE DE ENTRADA</p>
                 <p class="small text-danger fw-bold mb-1">TALÃO Nº: {{ talao_atual }}</p>
@@ -276,7 +276,7 @@ HTML_DASHBOARD = """
                 <p class="small mb-1">Entrada: {{ qr_entrada.split('|')[1].replace('ENTRADA:', '') }}</p>
                 <p class="small mb-2">Valor/Hora: R$ {{ "%.2f"|format(valor_recente) }}</p>
                 <div id="qrcodeEntrada" class="d-flex justify-content-center my-3"></div>
-                <p class="small mb-2"><strong>Mensagem:</strong> {{ cfg.mensagem }}</p>
+                <p class="small mb-2"><strong>Mensagem:</strong> {{ cfg.mensagem if cfg else '' }}</p>
                 {% if anuncios %}
                 <hr style="border-top: dashed 1px #000;">
                 <p class="small text-muted mb-1"><strong>Avisos:</strong></p>
@@ -304,22 +304,22 @@ HTML_DASHBOARD = """
         <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-body text-center bg-white p-4">
             
             <div id="printableArea">
-                {% if cfg.logo %}
+                {% if cfg and cfg.logo %}
                     <img src="{{ cfg.logo }}" alt="Logo" style="max-height: 40px; max-width: 150px; object-fit: contain; margin-bottom: 5px;"><br>
                     <span class="small fw-bold">{{ cfg.nome }}</span>
                 {% else %}
-                    <h4 class="fw-bold mb-1">🅿️ {{ cfg.nome }}</h4>
+                    <h4 class="fw-bold mb-1">🅿️ {{ cfg.nome if cfg else 'NovaPark' }}</h4>
                 {% endif %}
-                <p class="small mb-1">CNPJ: {{ cfg.cnpj }}</p>
-                <p class="small mb-1">{{ cfg.endereco }}</p>
-                <p class="small mb-2">Tel: {{ cfg.telefone }}</p>
+                <p class="small mb-1">CNPJ: {{ cfg.cnpj if cfg else '' }}</p>
+                <p class="small mb-1">{{ cfg.endereco if cfg else '' }}</p>
+                <p class="small mb-2">Tel: {{ cfg.telefone if cfg else '' }}</p>
                 <hr style="border-top: dashed 1px #000;">
                 <p class="fw-bold mb-1 text-uppercase">COMPROVANTE DE SAÍDA (BAIXA)</p>
                 <p class="small mb-1">Placa: <strong>{{ saida_recente.placa }}</strong></p>
                 <p class="small mb-1">Entrada: {{ saida_recente.hora_entrada }}</p>
                 <p class="small mb-1">Saída: {{ saida_recente.hora_saida }}</p>
                 <p class="fs-5 fw-bold text-success my-2">Total a Pagar: R$ {{ "%.2f"|format(saida_recente.valor_total) }}</p>
-                <p class="small mb-2"><strong>Mensagem:</strong> {{ cfg.mensagem }}</p>
+                <p class="small mb-2"><strong>Mensagem:</strong> {{ cfg.mensagem if cfg else '' }}</p>
                 {% if anuncios %}
                 <hr style="border-top: dashed 1px #000;">
                 <p class="small text-muted mb-1"><strong>Avisos:</strong></p>
@@ -412,23 +412,23 @@ HTML_DASHBOARD = """
     <!-- MODAL CONFIG -->
     <div class="modal fade" id="mConfig" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-body">
         <form action="/salvar_config" method="POST">
-            <label class="small">Nome do Estacionamento:</label><input name="nome" value="{{ cfg.nome }}" class="form-control mb-2" required>
-            <label class="small fw-bold text-primary">URL / Link da Logo (Imagem):</label><input name="logo" value="{{ cfg.logo }}" class="form-control mb-2" placeholder="https://exemplo.com/logo.png">
+            <label class="small">Nome do Estacionamento:</label><input name="nome" value="{{ cfg.nome if cfg else '' }}" class="form-control mb-2" required>
+            <label class="small fw-bold text-primary">URL / Link da Logo (Imagem):</label><input name="logo" value="{{ cfg.logo if cfg else '' }}" class="form-control mb-2" placeholder="https://exemplo.com/logo.png">
             
-            <label class="small">CNPJ:</label><input name="cnpj" value="{{ cfg.cnpj }}" class="form-control mb-2">
-            <label class="small">Endereço:</label><input name="endereco" value="{{ cfg.endereco }}" class="form-control mb-2">
-            <label class="small">Telefone:</label><input name="telefone" value="{{ cfg.telefone }}" class="form-control mb-2">
-            <label class="small">Horário de Funcionamento:</label><input name="horario" value="{{ cfg.horario }}" class="form-control mb-2">
+            <label class="small">CNPJ:</label><input name="cnpj" value="{{ cfg.cnpj if cfg else '' }}" class="form-control mb-2">
+            <label class="small">Endereço:</label><input name="endereco" value="{{ cfg.endereco if cfg else '' }}" class="form-control mb-2">
+            <label class="small">Telefone:</label><input name="telefone" value="{{ cfg.telefone if cfg else '' }}" class="form-control mb-2">
+            <label class="small">Horário de Funcionamento:</label><input name="horario" value="{{ cfg.horario if cfg else '' }}" class="form-control mb-2">
             
             <div class="row">
-                <div class="col-4"><label class="small fw-bold">Diária (R$):</label><input name="valor_diaria" type="number" step="0.01" value="{{ cfg.valor_diaria }}" class="form-control mb-2" required></div>
-                <div class="col-4"><label class="small fw-bold">Van/Caminh.:</label><input name="valor_van" type="number" step="0.01" value="{{ cfg.valor_van }}" class="form-control mb-2" required></div>
-                <div class="col-4"><label class="small fw-bold">Pernoite (R$):</label><input name="valor_pernoite" type="number" step="0.01" value="{{ cfg.valor_pernoite }}" class="form-control mb-2" required></div>
+                <div class="col-4"><label class="small fw-bold">Diária (R$):</label><input name="valor_diaria" type="number" step="0.01" value="{{ cfg.valor_diaria if cfg else 50.0 }}" class="form-control mb-2" required></div>
+                <div class="col-4"><label class="small fw-bold">Van/Caminh.:</label><input name="valor_van" type="number" step="0.01" value="{{ cfg.valor_van if cfg else 30.0 }}" class="form-control mb-2" required></div>
+                <div class="col-4"><label class="small fw-bold">Pernoite (R$):</label><input name="valor_pernoite" type="number" step="0.01" value="{{ cfg.valor_pernoite if cfg else 40.0 }}" class="form-control mb-2" required></div>
             </div>
 
-            <label class="small">Mensagem:</label><input name="mensagem" value="{{ cfg.mensagem }}" class="form-control mb-2">
+            <label class="small">Mensagem:</label><input name="mensagem" value="{{ cfg.mensagem if cfg else '' }}" class="form-control mb-2">
             <label class="small fw-bold text-primary">Impressora Bluetooth Portátil:</label>
-            <input name="imp" value="{{ cfg.impressora_status }}" class="form-control mb-3" placeholder="Ex: Thermer" required>
+            <input name="imp" value="{{ cfg.impressora_status if cfg else '' }}" class="form-control mb-3" placeholder="Ex: Thermer" required>
             <button class="btn btn-dark w-100 mb-3">Salvar Configurações</button>
         </form>
 
@@ -529,9 +529,9 @@ def entrada():
         cor = request.form.get('cor', '')
         
         try:
-            valor = float(request.form.get('valor', cfg.valor_diaria))
+            valor = float(request.form.get('valor', cfg['valor_diaria'] if cfg else 50.0))
         except ValueError:
-            valor = float(cfg.valor_diaria)
+            valor = float(cfg['valor_diaria'] if cfg else 50.0)
             
         hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
@@ -687,7 +687,7 @@ def del_usuario(id):
     conn = obter_conexao()
     total_users = conn.execute("SELECT COUNT(*) FROM usuarios").fetchone()[0]
     if total_users > 1:
-        conn.execute("DELETE FROM usuarios WHERE id=?", (id,))
+        conn.execute("DELETE FROM usuarios WHERE id=`, (id,))" # Corrigido abaixo
         conn.commit()
     conn.close()
     return redirect(url_for('dashboard'))
