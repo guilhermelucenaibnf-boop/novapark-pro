@@ -608,7 +608,7 @@ def saida_scanner():
 
     fmt = "%Y-%m-%d %H:%M:%S"
     entrada_dt = datetime.strptime(v['hora_entrada'], fmt)
-        saida = datetime.now(ZoneInfo("America/Sao_Paulo"))
+    saida = datetime.now(ZoneInfo("America/Sao_Paulo"))
 
     tempo_total = saida - entrada_dt
     horas = tempo_total.total_seconds() / 3600
