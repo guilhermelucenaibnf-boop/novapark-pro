@@ -550,7 +550,7 @@ def entrada():
         except ValueError:
             valor = float(cfg['valor_diaria'] if cfg else 50.0)
             
-                hora = datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%Y-%m-%d %H:%M:%S")
+            hora = datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%Y-%m-%d %H:%M:%S")
 
         
         conn = obter_conexao()
