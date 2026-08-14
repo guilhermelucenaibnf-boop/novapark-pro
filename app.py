@@ -537,33 +537,70 @@ def dashboard():
 def entrada():
     if 'email' not in session:
         return redirect(url_for('login'))
-    
+
     cfg, anuncios, ativos, concluidos, talao_atual, usuarios = get_dados()
-    
+
     if request.method == 'POST':
         placa = request.form.get('placa', '').upper().strip()
-        modelo = request.form.get('modelo', '')
-        cor = request.form.get('cor', '')
-        
-        try:
-            valor = float(request.form.get('valor', cfg['valor_diaria'] if cfg else 50.0))
-        except ValueError:
-            valor = float(cfg['valor_diaria'] if cfg else 50.0)
-            
-            hora = datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%Y-%m-%d %H:%M:%S")
-            
+        modelo = request.form.get('modelo', '').strip()
+        cor = request.form.get('cor', '').strip()
 
-        
+        try:
+            valor = float(
+                request.form.get(
+                    'valor',
+                    cfg['valor_diaria'] if cfg else 50.0
+                )
+            )
+        except (ValueError, TypeError):
+            valor = float(cfg['valor_diaria'] if cfg else 50.0)
+
+        # Horário da entrada
+        hora = datetime.now(
+            ZoneInfo("America/Sao_Paulo")
+        ).strftime("%Y-%m-%d %H:%M:%S")
+
         conn = obter_conexao()
-        conn.execute("INSERT INTO veiculos (placa, modelo, cor, valor, hora_entrada, status) VALUES (?, ?, ?, ?, ?, ?)", (placa, modelo, cor, valor, hora, 'ATIVO'))
+
+        conn.execute(
+            """
+            INSERT INTO veiculos
+            (placa, modelo, cor, valor, hora_entrada, status)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                placa,
+                modelo,
+                cor,
+                valor,
+                hora,
+                'ATIVO'
+            )
+        )
+
         conn.commit()
         conn.close()
-        
+
         cfg, anuncios, ativos, concluidos, talao_atual, usuarios = get_dados()
+
         qr_texto = f"PLACA:{placa}|ENTRADA:{hora}"
-        
-        return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, usuarios=usuarios, qr_entrada=qr_texto, placa_recente=placa, modelo_recente=modelo, cor_recente=cor, valor_recente=valor, saida_recente=None)
-    
+
+        return render_template_string(
+            HTML_DASHBOARD,
+            cfg=cfg,
+            anuncios=anuncios,
+            ativos=ativos,
+            concluidos=concluidos,
+            talao_atual=talao_atual,
+            usuarios=usuarios,
+            qr_entrada=qr_texto,
+            placa_recente=placa,
+            modelo_recente=modelo,
+            cor_recente=cor,
+            valor_recente=valor,
+            saida_recente=None
+        )
+
     return redirect(url_for('dashboard'))
 
 @app.route('/reimprimir/<int:id>')
@@ -608,8 +645,14 @@ def saida_scanner():
         return f"<h3>Veículo com placa '{placa}' não encontrado no pátio ativo.</h3><a href='/dashboard'>Voltar</a>"
 
     fmt = "%Y-%m-%d %H:%M:%S"
-    entrada_dt = datetime.strptime(v['hora_entrada'], fmt)
-    saida = datetime.now(ZoneInfo("America/Sao_Paulo"))
+    entrada_dt = datetime.strptime(
+    v['hora_entrada'],
+    fmt
+).replace(tzinfo=ZoneInfo("America/Sao_Paulo"))
+
+saida = datetime.now(
+    ZoneInfo("America/Sao_Paulo")
+)
 
     tempo_total = saida - entrada_dt
     horas = tempo_total.total_seconds() / 3600
@@ -737,6 +780,9 @@ def logout():
     session.pop('email', None)
     return redirect(url_for('login'))
 
+
+# Inicializa o banco de dados ao iniciar o aplicativo
+inicializar_banco()
+
 if __name__ == '__main__':
-    inicializar_banco()
     app.run(host='0.0.0.0', port=5000)
