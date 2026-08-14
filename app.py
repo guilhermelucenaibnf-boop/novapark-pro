@@ -644,23 +644,33 @@ def saida_scanner():
         conn.close()
         return f"<h3>Veículo com placa '{placa}' não encontrado no pátio ativo.</h3><a href='/dashboard'>Voltar</a>"
 
-    fmt = "%Y-%m-%d %H:%M:%S"
-    entrada_dt = datetime.strptime(
-    v['hora_entrada'],
-    fmt
-).replace(tzinfo=ZoneInfo("America/Sao_Paulo"))
+        fmt = "%Y-%m-%d %H:%M:%S"
 
-saida = datetime.now(
-    ZoneInfo("America/Sao_Paulo")
-)
+    entrada_dt = datetime.strptime(
+        v['hora_entrada'],
+        fmt
+    ).replace(tzinfo=ZoneInfo("America/Sao_Paulo"))
+
+    saida = datetime.now(
+        ZoneInfo("America/Sao_Paulo")
+    )
 
     tempo_total = saida - entrada_dt
+    horas = tempo_total.total_seconds() / 3600
+
+    if horas < 0.1:
+        horas = 0.1
+
+    val_hora = v['valor'] if v['valor'] is not None else 10.0
+    valor_final = horas * val_hora
+    hora_saida_str = saida.strftime(fmt)
     horas = tempo_total.total_seconds() / 3600
     if horas < 0.1: horas = 0.1
     
     val_hora = v['valor'] if v['valor'] is not None else 10.0
     valor_final = horas * val_hora
     hora_saida_str = saida.strftime(fmt)
+
     
     conn.execute("UPDATE veiculos SET status='FINALIZADO', hora_saida=?, valor_total=? WHERE id=?", (hora_saida_str, valor_final, v['id']))
     conn.commit()
