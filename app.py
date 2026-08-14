@@ -351,20 +351,34 @@ HTML_DASHBOARD = """
         </form>
 
         <script>
-            function onScanSuccess(decodedText) {
-                document.getElementById('placaScaneada').value = decodedText;
-                document.forms[document.forms.length - 1].submit();
-            }
-            try {
-                let html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
-                    fps: 10, 
-                    qrbox: 225,
-                    videoConstraints: { facingMode: "environment" }
+            let html5QrCode = null;
+
+            document.getElementById('mSaida').addEventListener('shown.bs.modal', function () {
+                if (!html5QrCode) {
+                    html5QrCode = new Html5Qrcode("reader");
+                }
+                html5QrCode.start(
+                    { facingMode: "environment" },
+                    { fps: 10, qrbox: 225 },
+                    (decodedText) => {
+                        document.getElementById('placaScaneada').value = decodedText;
+                        html5QrCode.stop().then(() => {
+                            document.forms[document.forms.length - 1].submit();
+                        }).catch(() => {
+                            document.forms[document.forms.length - 1].submit();
+                        });
+                    },
+                    (errorMessage) => {}
+                ).catch((err) => {
+                    console.log("Erro ao iniciar a câmera traseira: ", err);
                 });
-                html5QrcodeScanner.render(onScanSuccess);
-            } catch (e) {
-                console.log("Câmera indisponível.");
-            }
+            });
+
+            document.getElementById('mSaida').addEventListener('hidden.bs.modal', function () {
+                if (html5QrCode) {
+                    html5QrCode.stop().catch(() => {});
+                }
+            });
         </script>
         <a href="/dashboard" class="btn btn-secondary w-100 mt-3">Fechar</a>
     </div></div></div></div>
