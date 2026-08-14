@@ -231,7 +231,24 @@ HTML_DASHBOARD = """
                 <option value="Outra Cor">Outra Cor</option>
             </select>
 
-            <label class="small">Valor por Hora (R$):</label><input name="valor" type="number" step="0.01" value="10.00" class="form-control mb-3" required>
+            <label class="small fw-bold">Tipo de Cobrança / Tarifa:</label>
+            <select name="tipo_tarifa" id="tipoTarifa" class="form-select mb-2" onchange="atualizarValorTarifa()" required>
+                <option value="diaria" data-valor="{{ cfg.valor_diaria }}">Diária (R$ {{ "%.2f"|format(cfg.valor_diaria) }})</option>
+                <option value="van" data-valor="{{ cfg.valor_van }}">Van / Caminh. (R$ {{ "%.2f"|format(cfg.valor_van) }})</option>
+                <option value="pernoite" data-valor="{{ cfg.valor_pernoite }}">Pernoite (R$ {{ "%.2f"|format(cfg.valor_pernoite) }})</option>
+            </select>
+
+            <label class="small">Valor Selecionado (R$):</label>
+            <input name="valor" id="inputValorTarifa" type="number" step="0.01" value="{{ cfg.valor_diaria }}" class="form-control mb-3" required>
+
+            <script>
+                function atualizarValorTarifa() {
+                    let select = document.getElementById('tipoTarifa');
+                    let valorOpt = select.options[select.selectedIndex].getAttribute('data-valor');
+                    document.getElementById('inputValorTarifa').value = valorOpt;
+                }
+            </script>
+
             <button class="btn btn-success w-100">Registrar e Imprimir</button>
         </form>
     </div></div></div></div>
@@ -510,7 +527,7 @@ def entrada():
         placa = request.form.get('placa', '').upper().strip()
         modelo = request.form.get('modelo', '')
         cor = request.form.get('cor', '')
-        valor = float(request.form.get('valor', 10.0))
+        valor = float(request.form.get('valor', cfg.valor_diaria))
         hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         conn = obter_conexao()
@@ -524,6 +541,7 @@ def entrada():
         return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, usuarios=usuarios, qr_entrada=qr_texto, placa_recente=placa, modelo_recente=modelo, cor_recente=cor, valor_recente=valor, saida_recente=None)
     
     return redirect(url_for('dashboard'))
+
 
 @app.route('/reimprimir/<int:id>')
 def reimprimir(id):
