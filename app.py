@@ -54,7 +54,14 @@ HTML_LOGIN = """
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Login - NovaPark Pro</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"></head>
-<body class="bg-light d-flex align-items-center justify-content-center vh-100"><div class="card shadow p-4" style="width: 100%; max-width: 400px;"><h3 class="text-center mb-4 fw-bold text-primary">🚗 NovaPark Pro</h3><form action="/fazer_login" method="POST"><div class="mb-3"><label>E-mail</label><input type="email" name="email" class="form-control" required></div><div class="mb-3"><label>Senha</label><input type="password" name="senha" class="form-control" required></div><button type="submit" class="btn btn-primary w-100">Entrar</button></form></div></body></html>
+<body class="bg-light d-flex align-items-center justify-content-center vh-100"><div class="card shadow p-4" style="width: 100%; max-width: 400px;"><h3 class="text-center mb-4 fw-bold text-primary">🚗 NovaPark Pro</h3><form action="/fazer_login" method="POST"><div class="mb-3"><label>E-mail</label><input type="email" name="email" class="form-control" required></div><div class="mb-3"><label>Senha</label><input type="password" name="senha" class="form-control" required></div><button type="submit" class="btn btn-primary w-100 mb-2">Entrar</button></form><div class="text-center mt-2"><a href="/cadastro" class="text-decoration-none small">Criar novo cadastro</a></div></div></body></html>
+"""
+
+HTML_CADASTRO = """
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Cadastro - NovaPark Pro</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+<body class="bg-light d-flex align-items-center justify-content-center vh-100"><div class="card shadow p-4" style="width: 100%; max-width: 400px;"><h3 class="text-center mb-4 text-success fw-bold">Novo Cadastro</h3><form action="/cadastro" method="POST"><div class="mb-3"><label>E-mail</label><input type="email" name="email" class="form-control" required></div><div class="mb-3"><label>Senha</label><input type="password" name="senha" class="form-control" required></div><button type="submit" class="btn btn-success w-100 mb-2">Cadastrar</button></form><div class="text-center mt-3"><a href="/" class="text-decoration-none small">Voltar ao Login</a></div></div></body></html>
 """
 
 HTML_DASHBOARD = """
@@ -72,6 +79,21 @@ HTML_DASHBOARD = """
 
 @app.route('/')
 def login(): return render_template_string(HTML_LOGIN)
+
+@app.route('/cadastro', methods=['GET', 'POST'])
+def cadastro():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        senha = request.form.get('senha')
+        try:
+            conn = obter_conexao()
+            conn.execute("INSERT INTO usuarios (email, senha) VALUES (?, ?)", (email, senha))
+            conn.commit()
+            conn.close()
+            return redirect(url_for('login'))
+        except:
+            return "Email já cadastrado! <a href='/cadastro'>Tentar novamente</a>"
+    return render_template_string(HTML_CADASTRO)
 
 @app.route('/fazer_login', methods=['POST'])
 def fazer_login():
