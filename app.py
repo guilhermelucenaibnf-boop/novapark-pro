@@ -41,8 +41,13 @@ def inicializar_banco():
     if 'valor_diaria' not in cols_c: cursor.execute("ALTER TABLE configuracoes ADD COLUMN valor_diaria REAL DEFAULT 50.0")
     if 'valor_van' not in cols_c: cursor.execute("ALTER TABLE configuracoes ADD COLUMN valor_van REAL DEFAULT 30.0")
     if 'valor_pernoite' not in cols_c: cursor.execute("ALTER TABLE configuracoes ADD COLUMN valor_pernoite REAL DEFAULT 40.0")
-    if 'impressora_status' not in cols_c: cursor.execute("ALTER TABLE configuracoes ADD COLUMN impressora_status TEXT")
-    if 'logo' not in cols_c: cursor.execute("ALTER TABLE configuracoes ADD COLUMN logo TEXT")
+    if 'impressora_status' not in cols_c: cursor.execute("ALTER TABLE configuracoes ADD COLUMN impressora_status TEXT")try
+    try
+    cursor.execute("ALTER TABLE configuracoes ADD COLUMN logo TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
 
     cols_v = [col[1] for col in cursor.execute("PRAGMA table_info(veiculos)").fetchall()]
     if 'valor' not in cols_v: cursor.execute("ALTER TABLE veiculos ADD COLUMN valor REAL DEFAULT 10.0")
