@@ -60,9 +60,22 @@ def inicializar_banco():
     conn.execute(f'''CREATE TABLE IF NOT EXISTS auditoria (id {auto}, empresa_id INTEGER NOT NULL, usuario_id INTEGER, acao TEXT, detalhes TEXT, criado_em TEXT)''')
     # Migra automaticamente a versão antiga, preservando os dados existentes.
     tabelas_colunas = {
-        'usuarios': [('empresa_id','INTEGER'),('nome','TEXT'),('perfil',"TEXT DEFAULT 'funcionario'")],
-        'configuracoes': [('empresa_id','INTEGER'),('valor_hora','REAL DEFAULT 10'),('valor_fracao','REAL DEFAULT 5'),('minutos_fracao','INTEGER DEFAULT 30'),('taxa_talao','REAL DEFAULT 30'),('total_vagas','INTEGER DEFAULT 50')], 'anuncios': [('empresa_id','INTEGER')],
-        'veiculos': [('empresa_id','INTEGER'),('offline_id','TEXT'),('forma_pagamento','TEXT'),('desconto','REAL DEFAULT 0'),('talao_perdido','INTEGER DEFAULT 0'),('mensalista_id','INTEGER'),('cancelado','INTEGER DEFAULT 0'),('observacao','TEXT')]
+        'usuarios': [('empresa_id','INTEGER'),('nome','TEXT'),('email','TEXT'),('senha','TEXT'),('perfil',"TEXT DEFAULT 'funcionario'")],
+        'configuracoes': [
+            ('empresa_id','INTEGER'),('nome',"TEXT DEFAULT 'NovaPark Pro'"),('cnpj','TEXT'),('endereco','TEXT'),
+            ('telefone','TEXT'),('horario','TEXT'),('mensagem','TEXT'),('impressora_status','TEXT'),
+            ('valor_diaria','REAL DEFAULT 50'),('valor_van','REAL DEFAULT 30'),('valor_pernoite','REAL DEFAULT 40'),
+            ('valor_hora','REAL DEFAULT 10'),('valor_fracao','REAL DEFAULT 5'),('minutos_fracao','INTEGER DEFAULT 30'),
+            ('taxa_talao','REAL DEFAULT 30'),('total_vagas','INTEGER DEFAULT 50'),('logo','TEXT')
+        ],
+        'anuncios': [('empresa_id','INTEGER'),('texto','TEXT')],
+        'veiculos': [
+            ('empresa_id','INTEGER'),('offline_id','TEXT'),('placa','TEXT'),('modelo','TEXT'),('cor','TEXT'),
+            ('valor','REAL DEFAULT 10'),('tipo_tarifa',"TEXT DEFAULT 'diaria'"),('numero_talao','TEXT'),
+            ('hora_entrada','TEXT'),('hora_saida','TEXT'),('valor_total','REAL'),('status',"TEXT DEFAULT 'ATIVO'"),
+            ('forma_pagamento','TEXT'),('desconto','REAL DEFAULT 0'),('talao_perdido','INTEGER DEFAULT 0'),
+            ('mensalista_id','INTEGER'),('cancelado','INTEGER DEFAULT 0'),('observacao','TEXT')
+        ]
     }
     if conn.pg:
         for tabela, colunas in tabelas_colunas.items():
