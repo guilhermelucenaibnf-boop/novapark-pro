@@ -8,6 +8,7 @@ import math
 import csv
 import io
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from flask import Flask, render_template_string, request, redirect, url_for, session
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -21,6 +22,16 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "troque-esta-chave-no-render")
 UPLOAD_FOLDER = 'static/uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+FUSO_BRASIL = ZoneInfo("America/Sao_Paulo")
+
+def agora_brasilia():
+    """Retorna o horário atual oficial de Brasília."""
+    return datetime.now(FUSO_BRASIL)
+
+def agora_banco():
+    """Retorna o horário de Brasília no formato usado pelo banco."""
+    return agora_brasilia().strftime('%Y-%m-%d %H:%M:%S')
 
 class Conexao:
     def __init__(self):
@@ -130,7 +141,7 @@ def get_dados():
     return cfg, anuncios, ativos, concluidos, num_talao
 
 def registrar_auditoria(conn, acao, detalhes=''):
-    conn.execute("INSERT INTO auditoria(empresa_id,usuario_id,acao,detalhes,criado_em) VALUES(?,?,?,?,?)", (session['empresa_id'], session.get('usuario_id'), acao, detalhes, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+    conn.execute("INSERT INTO auditoria(empresa_id,usuario_id,acao,detalhes,criado_em) VALUES(?,?,?,?,?)", (session['empresa_id'], session.get('usuario_id'), acao, detalhes, agora_banco()))
 
 def obter_caixa_aberto(conn):
     return conn.execute("SELECT * FROM caixas WHERE empresa_id=? AND status='ABERTO' ORDER BY id DESC LIMIT 1", (session['empresa_id'],)).fetchone()
@@ -632,7 +643,7 @@ def entrada():
         if tipo_tarifa not in valores:
             tipo_tarifa = 'diaria'
         valor = valores[tipo_tarifa]
-        hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        hora = agora_banco()
         
         conn = obter_conexao()
         mensalista = conn.execute("SELECT id FROM mensalistas WHERE empresa_id=? AND UPPER(placa)=? AND ativo=1", (session['empresa_id'], placa)).fetchone()
@@ -717,7 +728,7 @@ def saida_scanner():
 
     fmt = "%Y-%m-%d %H:%M:%S"
     entrada = datetime.strptime(v['hora_entrada'], fmt)
-    saida = datetime.now()
+    saida = agora_brasilia().replace(tzinfo=None)
     tempo_total = saida - entrada
     minutos = max(0, tempo_total.total_seconds() / 60)
     cfg = conn.execute("SELECT * FROM configuracoes WHERE empresa_id=?", (eid,)).fetchone()
@@ -881,7 +892,7 @@ def financeiro():
     if not somente_admin(): return redirect(url_for('dashboard'))
     conn=obter_conexao();eid=session['empresa_id'];caixa=obter_caixa_aberto(conn)
     if request.method=='POST':
-        acao=request.form.get('acao');agora=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        acao=request.form.get('acao');agora=agora_banco()
         if acao=='abrir' and not caixa:
             conn.execute("INSERT INTO caixas(empresa_id,usuario_id,aberto_em,saldo_inicial,status) VALUES(?,?,?,?,?)",(eid,session['usuario_id'],agora,float(request.form.get('saldo_inicial',0)),'ABERTO'));registrar_auditoria(conn,'ABERTURA_CAIXA',request.form.get('saldo_inicial','0'))
         elif acao in ('DESPESA','RETIRADA') and caixa:
@@ -900,7 +911,7 @@ def financeiro():
 @app.route('/relatorios')
 def relatorios():
     if not somente_admin(): return redirect(url_for('dashboard'))
-    inicio=request.args.get('inicio',datetime.now().strftime('%Y-%m-01'));fim=request.args.get('fim',datetime.now().strftime('%Y-%m-%d'));conn=obter_conexao();eid=session['empresa_id'];regs=conn.execute("SELECT * FROM veiculos WHERE empresa_id=? AND substr(hora_entrada,1,10)>=? AND substr(hora_entrada,1,10)<=? ORDER BY id DESC",(eid,inicio,fim)).fetchall();aud=conn.execute("SELECT * FROM auditoria WHERE empresa_id=? ORDER BY id DESC LIMIT 50",(eid,)).fetchall();conn.close();receita=sum(float(x['valor_total'] or 0) for x in regs if x['status']=='FINALIZADO');cancelados=sum(1 for x in regs if x['cancelado']);linhas=''.join(f'''<tr><td>{x['placa']}</td><td>{x['hora_entrada']}</td><td>{x['hora_saida'] or '-'}</td><td>{x['forma_pagamento'] or '-'}</td><td>R$ {float(x['valor_total'] or 0):.2f}</td><td>{x['status']}</td><td>{f'<a href="/cancelar_registro/{x["id"]}" class="btn btn-sm btn-outline-danger">Cancelar</a>' if not x['cancelado'] else 'Cancelado'}</td></tr>''' for x in regs);logs=''.join(f'''<li class="list-group-item"><small>{x['criado_em']} — {x['acao']} — {x['detalhes'] or ''}</small></li>''' for x in aud)
+    inicio=request.args.get('inicio',agora_brasilia().strftime('%Y-%m-01'));fim=request.args.get('fim',agora_brasilia().strftime('%Y-%m-%d'));conn=obter_conexao();eid=session['empresa_id'];regs=conn.execute("SELECT * FROM veiculos WHERE empresa_id=? AND substr(hora_entrada,1,10)>=? AND substr(hora_entrada,1,10)<=? ORDER BY id DESC",(eid,inicio,fim)).fetchall();aud=conn.execute("SELECT * FROM auditoria WHERE empresa_id=? ORDER BY id DESC LIMIT 50",(eid,)).fetchall();conn.close();receita=sum(float(x['valor_total'] or 0) for x in regs if x['status']=='FINALIZADO');cancelados=sum(1 for x in regs if x['cancelado']);linhas=''.join(f'''<tr><td>{x['placa']}</td><td>{x['hora_entrada']}</td><td>{x['hora_saida'] or '-'}</td><td>{x['forma_pagamento'] or '-'}</td><td>R$ {float(x['valor_total'] or 0):.2f}</td><td>{x['status']}</td><td>{f'<a href="/cancelar_registro/{x["id"]}" class="btn btn-sm btn-outline-danger">Cancelar</a>' if not x['cancelado'] else 'Cancelado'}</td></tr>''' for x in regs);logs=''.join(f'''<li class="list-group-item"><small>{x['criado_em']} — {x['acao']} — {x['detalhes'] or ''}</small></li>''' for x in aud)
     conteudo=f'''<form class="row g-2 mb-3"><div class="col"><input class="form-control" type="date" name="inicio" value="{inicio}"></div><div class="col"><input class="form-control" type="date" name="fim" value="{fim}"></div><div class="col"><button class="btn btn-primary w-100">Filtrar</button></div></form><div class="row g-2 mb-3"><div class="col"><div class="card p-3"><b>Registros</b><span>{len(regs)}</span></div></div><div class="col"><div class="card p-3"><b>Receita</b><span>R$ {receita:.2f}</span></div></div><div class="col"><div class="card p-3"><b>Cancelados</b><span>{cancelados}</span></div></div></div><a class="btn btn-success mb-3" href="/exportar_csv?inicio={inicio}&fim={fim}">Exportar CSV</a><div class="card p-2 table-responsive"><table class="table table-sm"><thead><tr><th>Placa</th><th>Entrada</th><th>Saída</th><th>Pagamento</th><th>Total</th><th>Status</th><th>Ação</th></tr></thead><tbody>{linhas}</tbody></table></div><h5 class="mt-3">Auditoria</h5><ul class="list-group">{logs}</ul>'''
     return render_template_string(BASE_PRO,titulo='Relatórios',conteudo=conteudo)
 
@@ -909,7 +920,7 @@ def cancelar_registro(id):
     if somente_admin():
         conn=obter_conexao();v=conn.execute("SELECT * FROM veiculos WHERE id=? AND empresa_id=?",(id,session['empresa_id'])).fetchone()
         if v and not v['cancelado']:
-            conn.execute("UPDATE veiculos SET cancelado=1,status='CANCELADO' WHERE id=? AND empresa_id=?",(id,session['empresa_id']));conn.execute("INSERT INTO movimentos_caixa(empresa_id,usuario_id,veiculo_id,tipo,descricao,valor,forma_pagamento,criado_em) VALUES(?,?,?,?,?,?,?,?)",(session['empresa_id'],session['usuario_id'],id,'ESTORNO','Cancelamento '+v['placa'],float(v['valor_total'] or 0),v['forma_pagamento'],datetime.now().strftime('%Y-%m-%d %H:%M:%S')));registrar_auditoria(conn,'CANCELAMENTO',f"Placa {v['placa']}");conn.commit()
+            conn.execute("UPDATE veiculos SET cancelado=1,status='CANCELADO' WHERE id=? AND empresa_id=?",(id,session['empresa_id']));conn.execute("INSERT INTO movimentos_caixa(empresa_id,usuario_id,veiculo_id,tipo,descricao,valor,forma_pagamento,criado_em) VALUES(?,?,?,?,?,?,?,?)",(session['empresa_id'],session['usuario_id'],id,'ESTORNO','Cancelamento '+v['placa'],float(v['valor_total'] or 0),v['forma_pagamento'],agora_banco()));registrar_auditoria(conn,'CANCELAMENTO',f"Placa {v['placa']}");conn.commit()
         conn.close()
     return redirect(url_for('relatorios'))
 
@@ -956,8 +967,14 @@ async function sincronizar(){if(!navigator.onLine||!fila.length)return;try{let r
 def offline(): return HTML_OFFLINE
 
 def iso_para_banco(valor):
-    try: return datetime.fromisoformat(valor.replace('Z','+00:00')).replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
-    except Exception: return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    """Converte uma data ISO do celular para o horário oficial de Brasília."""
+    try:
+        data = datetime.fromisoformat(valor.replace('Z', '+00:00'))
+        if data.tzinfo is not None:
+            data = data.astimezone(FUSO_BRASIL)
+        return data.replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
+    except (ValueError, TypeError, AttributeError):
+        return agora_banco()
 
 @app.route('/api/offline_snapshot')
 def offline_snapshot():
