@@ -1,6 +1,7 @@
 import os
 import random
 import sqlite3
+import base64
 from datetime import datetime
 from flask import Flask, render_template_string, request, redirect, url_for, session
 
@@ -21,7 +22,7 @@ def inicializar_banco():
         id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT UNIQUE NOT NULL, senha TEXT NOT NULL
     )''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS configuracoes (
-        id INTEGER PRIMARY KEY, nome TEXT, cnpj TEXT, endereco TEXT, telefone TEXT, horario TEXT, mensagem TEXT, impressora_status TEXT, valor_diaria REAL DEFAULT 50.0, valor_van REAL DEFAULT 30.0, valor_pernoite REAL DEFAULT 40.0
+        id INTEGER PRIMARY KEY, nome TEXT, cnpj TEXT, endereco TEXT, telefone TEXT, horario TEXT, mensagem TEXT, impressora_status TEXT, valor_diaria REAL DEFAULT 50.0, valor_van REAL DEFAULT 30.0, valor_pernoite REAL DEFAULT 40.0, logo TEXT
     )''')
     cursor.execute('''CREATE TABLE IF NOT EXISTS anuncios (
         id INTEGER PRIMARY KEY AUTOINCREMENT, texto TEXT
@@ -41,6 +42,8 @@ def inicializar_banco():
         cursor.execute("ALTER TABLE configuracoes ADD COLUMN valor_pernoite REAL DEFAULT 40.0")
     if 'impressora_status' not in cols_c:
         cursor.execute("ALTER TABLE configuracoes ADD COLUMN impressora_status TEXT")
+    if 'logo' not in cols_c:
+        cursor.execute("ALTER TABLE configuracoes ADD COLUMN logo TEXT")
 
     cols_v = [col[1] for col in cursor.execute("PRAGMA table_info(veiculos)").fetchall()]
     if 'valor' not in cols_v:
@@ -62,7 +65,7 @@ def inicializar_banco():
 
     cursor.execute("SELECT COUNT(*) FROM configuracoes")
     if cursor.fetchone()[0] == 0:
-        cursor.execute("INSERT INTO configuracoes (id, nome, cnpj, endereco, telefone, horario, mensagem, impressora_status, valor_diaria, valor_van, valor_pernoite) VALUES (1, 'GLPPARK PRO', '00.000.000/0001-00', 'Rua Exemplo, 123', '(21) 99999-9999', '07:00-22:00', 'Seja Bem-Vindo!', 'Thermer Bluetooth', 50.0, 30.0, 40.0)")
+        cursor.execute("INSERT INTO configuracoes (id, nome, cnpj, endereco, telefone, horario, mensagem, impressora_status, valor_diaria, valor_van, valor_pernoite, logo) VALUES (1, 'GLPPARK PRO', '00.000.000/0001-00', 'Rua Exemplo, 123', '(21) 99999-9999', '07:00-22:00', 'Seja Bem-Vindo!', 'Thermer Bluetooth', 50.0, 30.0, 40.0, '')")
 
     conn.commit()
     conn.close()
@@ -164,8 +167,9 @@ HTML_DASHBOARD = """
     </style>
 </head>
 <body class="bg-light">
-    <div style="background-color: #d35400; color: white; text-align: center; padding: 6px; font-size: 13px; font-weight: bold;">
-        {{ cfg.nome }} | <a href="/logout" class="text-white">Sair</a>
+    <div style="background-color: #d35400; color: white; text-align: center; padding: 6px; font-size: 13px; font-weight: bold; display:flex; justify-content:center; align-items:center; gap:8px;">
+        {% if cfg.logo %}<img src="{{ cfg.logo }}" alt="Logo" style="max-height:32px; max-width:110px; object-fit:contain; background:white; padding:2px; border-radius:3px;">{% endif %}
+        <span>{{ cfg.nome }} | <a href="/logout" class="text-white">Sair</a></span>
     </div>
     <div class="container mt-3">
         <div class="row mb-2">
@@ -290,6 +294,7 @@ HTML_DASHBOARD = """
         <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-body text-center bg-white p-4">
             
             <div id="printableArea">
+                {% if cfg.logo %}<img src="{{ cfg.logo }}" alt="Logo" style="max-height:55px; max-width:160px; object-fit:contain; margin-bottom:5px;"><br>{% endif %}
                 <h5 class="fw-bold mb-1">{{ cfg.nome }}</h5>
                 <p class="small mb-1">CNPJ: {{ cfg.cnpj }}</p>
                 <p class="small mb-1">{{ cfg.endereco }}</p>
@@ -331,6 +336,7 @@ HTML_DASHBOARD = """
         <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-body text-center bg-white p-4">
             
             <div id="printableArea">
+                {% if cfg.logo %}<img src="{{ cfg.logo }}" alt="Logo" style="max-height:55px; max-width:160px; object-fit:contain; margin-bottom:5px;"><br>{% endif %}
                 <h5 class="fw-bold mb-1">{{ cfg.nome }}</h5>
                 <p class="small mb-1">CNPJ: {{ cfg.cnpj }}</p>
                 <p class="small mb-1">{{ cfg.endereco }}</p>
@@ -430,8 +436,17 @@ HTML_DASHBOARD = """
 
     <!-- MODAL CONFIG -->
     <div class="modal fade" id="mConfig" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-body">
-        <form action="/salvar_config" method="POST">
+        <form action="/salvar_config" method="POST" enctype="multipart/form-data">
             <label class="small">Nome:</label><input name="nome" value="{{ cfg.nome }}" class="form-control mb-2" required>
+            <label class="small fw-bold text-primary">Logo do estacionamento:</label>
+            <input name="logo_arquivo" type="file" accept="image/png,image/jpeg,image/webp,image/gif" class="form-control mb-2">
+            <div class="form-text mb-2">Escolha uma imagem do celular (PNG, JPG, WEBP ou GIF).</div>
+            {% if cfg.logo %}
+            <div class="text-center mb-2">
+                <img src="{{ cfg.logo }}" alt="Prévia da logo" style="max-height:70px; max-width:180px; object-fit:contain;">
+                <div><label class="small text-danger"><input type="checkbox" name="remover_logo" value="1"> Remover logo atual</label></div>
+            </div>
+            {% endif %}
             <label class="small">CNPJ:</label><input name="cnpj" value="{{ cfg.cnpj }}" class="form-control mb-2">
             <label class="small">Endereço:</label><input name="endereco" value="{{ cfg.endereco }}" class="form-control mb-2">
             <label class="small">Telefone:</label><input name="telefone" value="{{ cfg.telefone }}" class="form-control mb-2">
@@ -656,9 +671,28 @@ def salvar_config():
         return redirect(url_for('login'))
     try:
         conn = obter_conexao()
-        conn.execute("UPDATE configuracoes SET nome=?, cnpj=?, endereco=?, telefone=?, horario=?, mensagem=?, impressora_status=?, valor_diaria=?, valor_van=?, valor_pernoite=? WHERE id=1",
+        cfg_atual = conn.execute("SELECT logo FROM configuracoes WHERE id=1").fetchone()
+        logo = cfg_atual['logo'] if cfg_atual else ''
+
+        if request.form.get('remover_logo') == '1':
+            logo = ''
+
+        arquivo_logo = request.files.get('logo_arquivo')
+        if arquivo_logo and arquivo_logo.filename:
+            tipos_permitidos = {'image/png', 'image/jpeg', 'image/webp', 'image/gif'}
+            if arquivo_logo.mimetype not in tipos_permitidos:
+                conn.close()
+                return "Formato de logo inválido. Use PNG, JPG, WEBP ou GIF. <a href='/dashboard'>Voltar</a>"
+            dados_logo = arquivo_logo.read()
+            if len(dados_logo) > 2 * 1024 * 1024:
+                conn.close()
+                return "A logo deve ter no máximo 2 MB. <a href='/dashboard'>Voltar</a>"
+            logo = f"data:{arquivo_logo.mimetype};base64,{base64.b64encode(dados_logo).decode('ascii')}"
+
+        nome = request.form.get('nome', '').strip() or 'GLPPARK PRO'
+        conn.execute("UPDATE configuracoes SET nome=?, cnpj=?, endereco=?, telefone=?, horario=?, mensagem=?, impressora_status=?, valor_diaria=?, valor_van=?, valor_pernoite=?, logo=? WHERE id=1",
                      (
-                         request.form.get('nome', ''),
+                         nome,
                          request.form.get('cnpj', ''),
                          request.form.get('endereco', ''),
                          request.form.get('telefone', ''),
@@ -667,7 +701,8 @@ def salvar_config():
                          request.form.get('imp', ''),
                          float(request.form.get('valor_diaria', 50.0)),
                          float(request.form.get('valor_van', 30.0)),
-                         float(request.form.get('valor_pernoite', 40.0))
+                         float(request.form.get('valor_pernoite', 40.0)),
+                         logo
                      ))
         conn.commit()
         conn.close()
