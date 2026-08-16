@@ -1,9 +1,7 @@
-import sqlite3
 import os
 import random
+import sqlite3
 from datetime import datetime
-from zoneinfo import ZoneInfo
-
 from flask import Flask, render_template_string, request, redirect, url_for, session
 
 app = Flask(__name__)
@@ -19,51 +17,67 @@ def obter_conexao():
 def inicializar_banco():
     conn = obter_conexao()
     cursor = conn.cursor()
-    
     cursor.execute('''CREATE TABLE IF NOT EXISTS usuarios (
         id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT UNIQUE NOT NULL, senha TEXT NOT NULL
     )''')
-    
-    try:
-        cursor.execute("INSERT INTO usuarios (email, senha) VALUES (?, ?)", 
-                       ('Jaymepinheiro7854@gmail.com', '21971767894'))
-        conn.commit()
-    except sqlite3.IntegrityError:
-        pass
-
     cursor.execute('''CREATE TABLE IF NOT EXISTS configuracoes (
-        id INTEGER PRIMARY KEY, nome TEXT, cnpj TEXT, endereco TEXT, telefone TEXT, horario TEXT, mensagem TEXT, impressora_status TEXT, valor_diaria REAL DEFAULT 50.0, valor_van REAL DEFAULT 30.0, valor_pernoite REAL DEFAULT 40.0, logo TEXT
+        id INTEGER PRIMARY KEY, nome TEXT, cnpj TEXT, endereco TEXT, telefone TEXT, horario TEXT, mensagem TEXT, impressora_status TEXT, valor_diaria REAL DEFAULT 50.0, valor_van REAL DEFAULT 30.0, valor_pernoite REAL DEFAULT 40.0
     )''')
-    
     cursor.execute('''CREATE TABLE IF NOT EXISTS anuncios (
         id INTEGER PRIMARY KEY AUTOINCREMENT, texto TEXT
     )''')
-    
     cursor.execute('''CREATE TABLE IF NOT EXISTS veiculos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, placa TEXT NOT NULL, modelo TEXT, cor TEXT, valor REAL DEFAULT 10.0, hora_entrada TEXT, hora_saida TEXT, valor_total REAL, status TEXT DEFAULT 'ATIVO'
+        id INTEGER PRIMARY KEY AUTOINCREMENT, placa TEXT NOT NULL, modelo TEXT, cor TEXT,
+        valor REAL DEFAULT 10.0, tipo_tarifa TEXT DEFAULT 'diaria', numero_talao TEXT,
+        hora_entrada TEXT, hora_saida TEXT, valor_total REAL, status TEXT DEFAULT 'ATIVO'
     )''')
     
     cols_c = [col[1] for col in cursor.execute("PRAGMA table_info(configuracoes)").fetchall()]
-    if 'valor_diaria' not in cols_c: cursor.execute("ALTER TABLE configuracoes ADD COLUMN valor_diaria REAL DEFAULT 50.0")
-    if 'valor_van' not in cols_c: cursor.execute("ALTER TABLE configuracoes ADD COLUMN valor_van REAL DEFAULT 30.0")
-    if 'valor_pernoite' not in cols_c: cursor.execute("ALTER TABLE configuracoes ADD COLUMN valor_pernoite REAL DEFAULT 40.0")
-    if 'impressora_status' not in cols_c: cursor.execute("ALTER TABLE configuracoes ADD COLUMN impressora_status TEXT")
-    if 'logo' not in cols_c: cursor.execute("ALTER TABLE configuracoes ADD COLUMN logo TEXT")
+    if 'valor_diaria' not in cols_c:
+        cursor.execute("ALTER TABLE configuracoes ADD COLUMN valor_diaria REAL DEFAULT 50.0")
+    if 'valor_van' not in cols_c:
+        cursor.execute("ALTER TABLE configuracoes ADD COLUMN valor_van REAL DEFAULT 30.0")
+    if 'valor_pernoite' not in cols_c:
+        cursor.execute("ALTER TABLE configuracoes ADD COLUMN valor_pernoite REAL DEFAULT 40.0")
+    if 'impressora_status' not in cols_c:
+        cursor.execute("ALTER TABLE configuracoes ADD COLUMN impressora_status TEXT")
 
     cols_v = [col[1] for col in cursor.execute("PRAGMA table_info(veiculos)").fetchall()]
-    if 'valor' not in cols_v: cursor.execute("ALTER TABLE veiculos ADD COLUMN valor REAL DEFAULT 10.0")
-    if 'modelo' not in cols_v: cursor.execute("ALTER TABLE veiculos ADD COLUMN modelo TEXT")
-    if 'cor' not in cols_v: cursor.execute("ALTER TABLE veiculos ADD COLUMN cor TEXT")
-    if 'valor_total' not in cols_v: cursor.execute("ALTER TABLE veiculos ADD COLUMN valor_total REAL")
-    if 'hora_saida' not in cols_v: cursor.execute("ALTER TABLE veiculos ADD COLUMN hora_saida TEXT")
-    if 'status' not in cols_v: cursor.execute("ALTER TABLE veiculos ADD COLUMN status TEXT DEFAULT 'ATIVO'")
+    if 'valor' not in cols_v:
+        cursor.execute("ALTER TABLE veiculos ADD COLUMN valor REAL DEFAULT 10.0")
+    if 'modelo' not in cols_v:
+        cursor.execute("ALTER TABLE veiculos ADD COLUMN modelo TEXT")
+    if 'cor' not in cols_v:
+        cursor.execute("ALTER TABLE veiculos ADD COLUMN cor TEXT")
+    if 'valor_total' not in cols_v:
+        cursor.execute("ALTER TABLE veiculos ADD COLUMN valor_total REAL")
+    if 'hora_saida' not in cols_v:
+        cursor.execute("ALTER TABLE veiculos ADD COLUMN hora_saida TEXT")
+    if 'status' not in cols_v:
+        cursor.execute("ALTER TABLE veiculos ADD COLUMN status TEXT DEFAULT 'ATIVO'")
+    if 'tipo_tarifa' not in cols_v:
+        cursor.execute("ALTER TABLE veiculos ADD COLUMN tipo_tarifa TEXT DEFAULT 'diaria'")
+    if 'numero_talao' not in cols_v:
+        cursor.execute("ALTER TABLE veiculos ADD COLUMN numero_talao TEXT")
 
     cursor.execute("SELECT COUNT(*) FROM configuracoes")
     if cursor.fetchone()[0] == 0:
-        cursor.execute("INSERT INTO configuracoes (id, nome, cnpj, endereco, telefone, horario, mensagem, impressora_status, valor_diaria, valor_van, valor_pernoite, logo) VALUES (1, 'NovaPark Pro', '00.000.000/0001-00', 'Rua Exemplo, 123', '(21) 99999-9999', '07:00-22:00', 'Seja Bem-Vindo!', 'Thermer Bluetooth', 50.0, 30.0, 40.0, '')")
+        cursor.execute("INSERT INTO configuracoes (id, nome, cnpj, endereco, telefone, horario, mensagem, impressora_status, valor_diaria, valor_van, valor_pernoite) VALUES (1, 'GLPPARK PRO', '00.000.000/0001-00', 'Rua Exemplo, 123', '(21) 99999-9999', '07:00-22:00', 'Seja Bem-Vindo!', 'Thermer Bluetooth', 50.0, 30.0, 40.0)")
 
     conn.commit()
     conn.close()
+
+def gerar_numero_talao(conn):
+    """Gera um talão aleatório de 5 dígitos ainda não utilizado."""
+    for _ in range(1000):
+        numero = str(random.randint(10000, 99999))
+        existe = conn.execute(
+            "SELECT 1 FROM veiculos WHERE numero_talao=? LIMIT 1", (numero,)
+        ).fetchone()
+        if not existe:
+            return numero
+    raise RuntimeError("Não foi possível gerar um número de talão disponível.")
+
 
 def get_dados():
     conn = obter_conexao()
@@ -71,25 +85,24 @@ def get_dados():
     anuncios = conn.execute("SELECT * FROM anuncios").fetchall()
     ativos = conn.execute("SELECT * FROM veiculos WHERE status='ATIVO' ORDER BY id DESC").fetchall()
     concluidos = conn.execute("SELECT * FROM veiculos WHERE status='FINALIZADO' ORDER BY id DESC").fetchall()
-    usuarios = conn.execute("SELECT * FROM usuarios").fetchall()
     
-    num_talao = f"{random.randint(10000, 99999)}"
+    num_talao = gerar_numero_talao(conn)
     
     conn.close()
-    return cfg, anuncios, ativos, concluidos, num_talao, usuarios
+    return cfg, anuncios, ativos, concluidos, num_talao
 
 HTML_LOGIN = """
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - NovaPark Pro</title>
+    <title>Login - Glppark Pro</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>.eye-btn { cursor: pointer; position: absolute; right: 15px; top: 35px; }</style>
 </head>
 <body class="bg-light d-flex align-items-center justify-content-center vh-100">
     <div class="card shadow p-4" style="width: 100%; max-width: 400px;">
-        <h3 class="text-center mb-4 fw-bold text-primary">🚗 NovaPark Pro</h3>
+        <h3 class="text-center mb-4 fw-bold text-primary">🚗 Glppark Pro</h3>
         <form action="/fazer_login" method="POST">
             <div class="mb-3"><label class="form-label">E-mail</label><input type="email" name="email" class="form-control" required></div>
             <div class="mb-3 position-relative">
@@ -99,7 +112,7 @@ HTML_LOGIN = """
             </div>
             <button type="submit" class="btn btn-primary w-100 mb-2">Entrar</button>
         </form>
-        <div class="text-center mt-2"><a href="/cadastro" class="text-decoration-none small">Criar Cadastro Novo</a></div>
+        <div class="text-center mt-3"><a href="/cadastro" class="text-decoration-none small fw-bold">Criar Cadastro Novo</a></div>
     </div>
 </body>
 </html>
@@ -110,7 +123,7 @@ HTML_CADASTRO = """
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cadastro - NovaPark Pro</title>
+    <title>Cadastro - Glppark Pro</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>.eye-btn { cursor: pointer; position: absolute; right: 15px; top: 35px; }</style>
 </head>
@@ -137,7 +150,7 @@ HTML_DASHBOARD = """
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel - NovaPark Pro</title>
+    <title>Painel - Glppark Pro</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
@@ -151,13 +164,8 @@ HTML_DASHBOARD = """
     </style>
 </head>
 <body class="bg-light">
-    <div style="background-color: #d35400; color: white; text-align: center; padding: 8px; font-size: 14px; font-weight: bold; display: flex; justify-content: center; align-items: center; gap: 10px;">
-        {% if cfg and cfg.logo %}
-            <img src="{{ cfg.logo }}" alt="Logo" style="max-height: 25px; max-width: 100px; object-fit: contain; background: white; padding: 2px; border-radius: 3px;">
-        {% else %}
-            🅿️ {{ cfg.nome if cfg else 'NovaPark' }}
-        {% endif %}
-        | <a href="/logout" class="text-white text-decoration-underline">Sair</a>
+    <div style="background-color: #d35400; color: white; text-align: center; padding: 6px; font-size: 13px; font-weight: bold;">
+        {{ cfg.nome }} | <a href="/logout" class="text-white">Sair</a>
     </div>
     <div class="container mt-3">
         <div class="row mb-2">
@@ -179,6 +187,7 @@ HTML_DASHBOARD = """
     <div class="modal fade" id="mEntrada" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-body">
         <h5 class="fw-bold mb-3">Registrar Entrada (Talão Nº {{ talao_atual }})</h5>
         <form action="/entrada" method="POST">
+            <input type="hidden" name="numero_talao" value="{{ talao_atual }}">
             <label class="small">Placa:</label><input name="placa" class="form-control mb-2 text-uppercase" placeholder="Ex: ABC-1234" required>
             
             <label class="small fw-bold">Modelo do Carro / Fabricante:</label>
@@ -191,27 +200,46 @@ HTML_DASHBOARD = """
                     <option value="Fiat Argo">Fiat Argo</option>
                     <option value="Fiat Strada">Fiat Strada</option>
                     <option value="Fiat Toro">Fiat Toro</option>
+                    <option value="Fiat Fiorino">Fiat Fiorino</option>
                 </optgroup>
                 <optgroup label="Volkswagen">
                     <option value="VW Gol">VW Gol</option>
                     <option value="VW Polo">VW Polo</option>
                     <option value="VW Saveiro">VW Saveiro</option>
+                    <option value="VW Voyage">VW Voyage</option>
                     <option value="VW T-Cross">VW T-Cross</option>
                     <option value="VW Nivus">VW Nivus</option>
+                    <option value="VW Fox">VW Fox</option>
                 </optgroup>
                 <optgroup label="Chevrolet">
                     <option value="Chevrolet Onix">Chevrolet Onix</option>
                     <option value="Chevrolet Prisma">Chevrolet Prisma</option>
                     <option value="Chevrolet Tracker">Chevrolet Tracker</option>
                     <option value="Chevrolet S10">Chevrolet S10</option>
+                    <option value="Chevrolet Montana">Chevrolet Montana</option>
+                    <option value="Chevrolet Classic">Chevrolet Classic</option>
                 </optgroup>
-                <optgroup label="Hyundai / Toyota / Honda">
+                <optgroup label="Hyundai">
                     <option value="Hyundai HB20">Hyundai HB20</option>
                     <option value="Hyundai Creta">Hyundai Creta</option>
+                    <option value="Hyundai Tucson">Hyundai Tucson</option>
+                </optgroup>
+                <optgroup label="Toyota / Honda">
                     <option value="Toyota Corolla">Toyota Corolla</option>
                     <option value="Toyota Hilux">Toyota Hilux</option>
+                    <option value="Toyota Etios">Toyota Etios</option>
                     <option value="Honda Civic">Honda Civic</option>
+                    <option value="Honda Fit">Honda Fit</option>
                     <option value="Honda HR-V">Honda HR-V</option>
+                </optgroup>
+                <optgroup label="Renault / Ford / Jeep">
+                    <option value="Renault Kwid">Renault Kwid</option>
+                    <option value="Renault Sandero">Renault Sandero</option>
+                    <option value="Renault Logan">Renault Logan</option>
+                    <option value="Ford Ka">Ford Ka</option>
+                    <option value="Ford Ranger">Ford Ranger</option>
+                    <option value="Jeep Renegade">Jeep Renegade</option>
+                    <option value="Jeep Compass">Jeep Compass</option>
                 </optgroup>
                 <optgroup label="Outros / Motos">
                     <option value="Moto Honda CG">Moto Honda CG</option>
@@ -230,27 +258,28 @@ HTML_DASHBOARD = """
                 <option value="Cinza">Cinza</option>
                 <option value="Vermelho">Vermelho</option>
                 <option value="Azul">Azul</option>
+                <option value="Verde">Verde</option>
+                <option value="Amarelo">Amarelo</option>
+                <option value="Marrom">Marrom</option>
+                <option value="Bege">Bege</option>
                 <option value="Outra Cor">Outra Cor</option>
             </select>
 
-            <label class="small fw-bold">Tipo de Cobrança / Tarifa:</label>
-            <select name="tipo_tarifa" id="tipoTarifa" class="form-select mb-2" onchange="atualizarValorTarifa()" required>
-                <option value="diaria" data-valor="{{ cfg.valor_diaria if cfg else 50.0 }}">Diária (R$ {{ "%.2f"|format(cfg.valor_diaria if cfg else 50.0) }})</option>
-                <option value="van" data-valor="{{ cfg.valor_van if cfg else 30.0 }}">Van / Caminh. (R$ {{ "%.2f"|format(cfg.valor_van if cfg else 30.0) }})</option>
-                <option value="pernoite" data-valor="{{ cfg.valor_pernoite if cfg else 40.0 }}">Pernoite (R$ {{ "%.2f"|format(cfg.valor_pernoite if cfg else 40.0) }})</option>
+            <label class="small fw-bold">Tipo de tarifa:</label>
+            <select name="tipo_tarifa" id="tipoTarifa" class="form-select mb-2" onchange="atualizarTarifa()" required>
+                <option value="diaria" data-valor="{{ cfg.valor_diaria }}">Diária — R$ {{ "%.2f"|format(cfg.valor_diaria) }}</option>
+                <option value="van" data-valor="{{ cfg.valor_van }}">Van/Caminhonete — R$ {{ "%.2f"|format(cfg.valor_van) }}</option>
+                <option value="pernoite" data-valor="{{ cfg.valor_pernoite }}">Pernoite — R$ {{ "%.2f"|format(cfg.valor_pernoite) }}</option>
             </select>
-
-            <label class="small">Valor Selecionado (R$):</label>
-            <input name="valor" id="inputValorTarifa" type="number" step="0.01" value="{{ cfg.valor_diaria if cfg else 50.0 }}" class="form-control mb-3" required>
-
+            <label class="small">Valor da tarifa (R$):</label>
+            <input name="valor" id="valorTarifa" type="number" step="0.01" value="{{ cfg.valor_diaria }}" class="form-control mb-2" readonly>
+            <p class="small text-muted">Tolerância: até 15 minutos, total R$ 0,00. Acima disso, cobra a tarifa completa.</p>
             <script>
-                function atualizarValorTarifa() {
-                    let select = document.getElementById('tipoTarifa');
-                    let valorOpt = select.options[select.selectedIndex].getAttribute('data-valor');
-                    document.getElementById('inputValorTarifa').value = valorOpt;
+                function atualizarTarifa() {
+                    const seletor = document.getElementById('tipoTarifa');
+                    document.getElementById('valorTarifa').value = seletor.options[seletor.selectedIndex].dataset.valor;
                 }
             </script>
-
             <button class="btn btn-success w-100">Registrar e Imprimir</button>
         </form>
     </div></div></div></div>
@@ -261,27 +290,23 @@ HTML_DASHBOARD = """
         <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-body text-center bg-white p-4">
             
             <div id="printableArea">
-                {% if cfg and cfg.logo %}
-                    <img src="{{ cfg.logo }}" alt="Logo" style="max-height: 40px; max-width: 150px; object-fit: contain; margin-bottom: 5px;"><br>
-                    <span class="small fw-bold">{{ cfg.nome }}</span>
-                {% else %}
-                    <h4 class="fw-bold mb-1">🅿️ {{ cfg.nome if cfg else 'NovaPark' }}</h4>
-                {% endif %}
-                <p class="small mb-1">CNPJ: {{ cfg.cnpj if cfg else '' }}</p>
-                <p class="small mb-1">{{ cfg.endereco if cfg else '' }}</p>
-                <p class="small mb-2">Tel: {{ cfg.telefone if cfg else '' }}</p>
+                <h5 class="fw-bold mb-1">{{ cfg.nome }}</h5>
+                <p class="small mb-1">CNPJ: {{ cfg.cnpj }}</p>
+                <p class="small mb-1">{{ cfg.endereco }}</p>
+                <p class="small mb-2">Tel: {{ cfg.telefone }}</p>
                 <hr style="border-top: dashed 1px #000;">
                 <p class="fw-bold mb-1 text-uppercase">COMPROVANTE DE ENTRADA</p>
                 <p class="small text-danger fw-bold mb-1">TALÃO Nº: {{ talao_atual }}</p>
                 <p class="small mb-1">Placa: <strong>{{ placa_recente }}</strong></p>
                 <p class="small mb-1">Modelo: {{ modelo_recente }} | Cor: {{ cor_recente }}</p>
-                <p class="small mb-1">Entrada: {{ qr_entrada.split('|')[1].replace('ENTRADA:', '') }}</p>
-                <p class="small mb-2">Valor/Hora: R$ {{ "%.2f"|format(valor_recente) }}</p>
+                <p class="small mb-1">Entrada: {{ qr_entrada.split('|')[-1].replace('ENTRADA:', '') }}</p>
+                <p class="small mb-1">Tarifa: {{ tipo_tarifa_recente|title }}</p>
+                <p class="small mb-2">Valor da tarifa: R$ {{ "%.2f"|format(valor_recente) }}</p>
                 <div id="qrcodeEntrada" class="d-flex justify-content-center my-3"></div>
-                <p class="small mb-2"><strong>Mensagem:</strong> {{ cfg.mensagem if cfg else '' }}</p>
+                <p class="small mb-2"><strong>Mensagem:</strong> {{ cfg.mensagem }}</p>
                 {% if anuncios %}
                 <hr style="border-top: dashed 1px #000;">
-                <p class="small text-muted mb-1"><strong>Avisos:</strong></p>
+                <p class="small text-muted mb-1"><strong>Anúncios / Avisos:</strong></p>
                 {% for a in anuncios %}
                 <p class="small mb-1">- {{ a.texto }}</p>
                 {% endfor %}
@@ -306,25 +331,21 @@ HTML_DASHBOARD = """
         <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-body text-center bg-white p-4">
             
             <div id="printableArea">
-                {% if cfg and cfg.logo %}
-                    <img src="{{ cfg.logo }}" alt="Logo" style="max-height: 40px; max-width: 150px; object-fit: contain; margin-bottom: 5px;"><br>
-                    <span class="small fw-bold">{{ cfg.nome }}</span>
-                {% else %}
-                    <h4 class="fw-bold mb-1">🅿️ {{ cfg.nome if cfg else 'NovaPark' }}</h4>
-                {% endif %}
-                <p class="small mb-1">CNPJ: {{ cfg.cnpj if cfg else '' }}</p>
-                <p class="small mb-1">{{ cfg.endereco if cfg else '' }}</p>
-                <p class="small mb-2">Tel: {{ cfg.telefone if cfg else '' }}</p>
+                <h5 class="fw-bold mb-1">{{ cfg.nome }}</h5>
+                <p class="small mb-1">CNPJ: {{ cfg.cnpj }}</p>
+                <p class="small mb-1">{{ cfg.endereco }}</p>
+                <p class="small mb-2">Tel: {{ cfg.telefone }}</p>
                 <hr style="border-top: dashed 1px #000;">
                 <p class="fw-bold mb-1 text-uppercase">COMPROVANTE DE SAÍDA (BAIXA)</p>
                 <p class="small mb-1">Placa: <strong>{{ saida_recente.placa }}</strong></p>
                 <p class="small mb-1">Entrada: {{ saida_recente.hora_entrada }}</p>
                 <p class="small mb-1">Saída: {{ saida_recente.hora_saida }}</p>
+                <p class="small mb-1">Tarifa: {{ saida_recente.tipo_tarifa|default('diaria', true)|title }}</p>
                 <p class="fs-5 fw-bold text-success my-2">Total a Pagar: R$ {{ "%.2f"|format(saida_recente.valor_total) }}</p>
-                <p class="small mb-2"><strong>Mensagem:</strong> {{ cfg.mensagem if cfg else '' }}</p>
+                <p class="small mb-2"><strong>Mensagem:</strong> {{ cfg.mensagem }}</p>
                 {% if anuncios %}
                 <hr style="border-top: dashed 1px #000;">
-                <p class="small text-muted mb-1"><strong>Avisos:</strong></p>
+                <p class="small text-muted mb-1"><strong>Anúncios / Avisos:</strong></p>
                 {% for a in anuncios %}
                 <p class="small mb-1">- {{ a.texto }}</p>
                 {% endfor %}
@@ -342,9 +363,9 @@ HTML_DASHBOARD = """
     </div>
     {% endif %}
 
-    <!-- MODAL SAÍDA COM CÂMERA TRASEIRA SCANNER -->
+    <!-- MODAL SAÍDA COM CÂMERA SCANNER E ENTRADA MANUAL -->
     <div class="modal fade" id="mSaida" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-body text-center">
-        <h5 class="fw-bold mb-3">Escanear QR Code (Câmera Traseira)</h5>
+        <h5 class="fw-bold mb-3">Escanear ou Digitar Saída</h5>
         <div id="reader" style="width: 100%;"></div>
         
         <form action="/saida_scanner" method="POST" class="mt-3">
@@ -355,34 +376,16 @@ HTML_DASHBOARD = """
         </form>
 
         <script>
-            let html5QrCode = null;
-
-            document.getElementById('mSaida').addEventListener('shown.bs.modal', function () {
-                if (!html5QrCode) {
-                    html5QrCode = new Html5Qrcode("reader");
-                }
-                html5QrCode.start(
-                    { facingMode: "environment" },
-                    { fps: 10, qrbox: 225 },
-                    (decodedText) => {
-                        document.getElementById('placaScaneada').value = decodedText;
-                        html5QrCode.stop().then(() => {
-                            document.forms[document.forms.length - 1].submit();
-                        }).catch(() => {
-                            document.forms[document.forms.length - 1].submit();
-                        });
-                    },
-                    (errorMessage) => {}
-                ).catch((err) => {
-                    console.log("Erro ao iniciar a câmera traseira: ", err);
-                });
-            });
-
-            document.getElementById('mSaida').addEventListener('hidden.bs.modal', function () {
-                if (html5QrCode) {
-                    html5QrCode.stop().catch(() => {});
-                }
-            });
+            function onScanSuccess(decodedText) {
+                document.getElementById('placaScaneada').value = decodedText;
+                document.forms[document.forms.length - 1].submit();
+            }
+            try {
+                let html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 225 });
+                html5QrcodeScanner.render(onScanSuccess);
+            } catch (e) {
+                console.log("Câmera indisponível.");
+            }
         </script>
         <a href="/dashboard" class="btn btn-secondary w-100 mt-3">Fechar</a>
     </div></div></div></div>
@@ -428,48 +431,23 @@ HTML_DASHBOARD = """
     <!-- MODAL CONFIG -->
     <div class="modal fade" id="mConfig" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-body">
         <form action="/salvar_config" method="POST">
-            <label class="small">Nome do Estacionamento:</label><input name="nome" value="{{ cfg.nome if cfg else '' }}" class="form-control mb-2" required>
-            <label class="small fw-bold text-primary">URL / Link da Logo (Imagem):</label><input name="logo" value="{{ cfg.logo if cfg else '' }}" class="form-control mb-2" placeholder="https://exemplo.com/logo.png">
-            
-            <label class="small">CNPJ:</label><input name="cnpj" value="{{ cfg.cnpj if cfg else '' }}" class="form-control mb-2">
-            <label class="small">Endereço:</label><input name="endereco" value="{{ cfg.endereco if cfg else '' }}" class="form-control mb-2">
-            <label class="small">Telefone:</label><input name="telefone" value="{{ cfg.telefone if cfg else '' }}" class="form-control mb-2">
-            <label class="small">Horário de Funcionamento:</label><input name="horario" value="{{ cfg.horario if cfg else '' }}" class="form-control mb-2">
+            <label class="small">Nome:</label><input name="nome" value="{{ cfg.nome }}" class="form-control mb-2" required>
+            <label class="small">CNPJ:</label><input name="cnpj" value="{{ cfg.cnpj }}" class="form-control mb-2">
+            <label class="small">Endereço:</label><input name="endereco" value="{{ cfg.endereco }}" class="form-control mb-2">
+            <label class="small">Telefone:</label><input name="telefone" value="{{ cfg.telefone }}" class="form-control mb-2">
+            <label class="small">Horário de Funcionamento:</label><input name="horario" value="{{ cfg.horario }}" class="form-control mb-2">
             
             <div class="row">
-                <div class="col-4"><label class="small fw-bold">Diária (R$):</label><input name="valor_diaria" type="number" step="0.01" value="{{ cfg.valor_diaria if cfg else 50.0 }}" class="form-control mb-2" required></div>
-                <div class="col-4"><label class="small fw-bold">Van/Caminh.:</label><input name="valor_van" type="number" step="0.01" value="{{ cfg.valor_van if cfg else 30.0 }}" class="form-control mb-2" required></div>
-                <div class="col-4"><label class="small fw-bold">Pernoite (R$):</label><input name="valor_pernoite" type="number" step="0.01" value="{{ cfg.valor_pernoite if cfg else 40.0 }}" class="form-control mb-2" required></div>
+                <div class="col-4"><label class="small fw-bold">Diária (R$):</label><input name="valor_diaria" type="number" step="0.01" value="{{ cfg.valor_diaria }}" class="form-control mb-2" required></div>
+                <div class="col-4"><label class="small fw-bold">Van/Caminh.:</label><input name="valor_van" type="number" step="0.01" value="{{ cfg.valor_van }}" class="form-control mb-2" required></div>
+                <div class="col-4"><label class="small fw-bold">Pernoite (R$):</label><input name="valor_pernoite" type="number" step="0.01" value="{{ cfg.valor_pernoite }}" class="form-control mb-2" required></div>
             </div>
 
-            <label class="small">Mensagem:</label><input name="mensagem" value="{{ cfg.mensagem if cfg else '' }}" class="form-control mb-2">
+            <label class="small">Mensagem:</label><input name="mensagem" value="{{ cfg.mensagem }}" class="form-control mb-2">
             <label class="small fw-bold text-primary">Impressora Bluetooth Portátil:</label>
-            <input name="imp" value="{{ cfg.impressora_status if cfg else '' }}" class="form-control mb-3" placeholder="Ex: Thermer" required>
-            <button class="btn btn-dark w-100 mb-3">Salvar Configurações</button>
+            <input name="imp" value="{{ cfg.impressora_status }}" class="form-control mb-3" placeholder="Ex: Thermer" required>
+            <button class="btn btn-dark w-100 mb-2">Salvar Configurações</button>
         </form>
-
-        <hr>
-        <h6 class="fw-bold text-success">Gerenciar E-mails / Senhas de Acesso</h6>
-        <form action="/add_usuario" method="POST" class="mb-3">
-            <div class="input-group mb-1">
-                <input type="email" name="novo_email" class="form-control form-control-sm" placeholder="Novo e-mail" required>
-                <input type="text" name="nova_senha" class="form-control form-control-sm" placeholder="Nova senha" required>
-                <button class="btn btn-success btn-sm">Adicionar</button>
-            </div>
-        </form>
-        <ul class="list-group mb-3" style="max-height: 120px; overflow-y: auto;">
-            {% for u in usuarios %}
-            <li class="list-group-item d-flex justify-content-between align-items-center py-1 px-2 small">
-                <span>{{ u.email }}</span>
-                {% if usuarios|length > 1 %}
-                <a href="/del_usuario/{{ u.id }}" class="text-danger fw-bold text-decoration-none">Excluir</a>
-                {% else %}
-                <span class="text-muted">Principal</span>
-                {% endif %}
-            </li>
-            {% endfor %}
-        </ul>
-
         <a href="/dashboard" class="btn btn-secondary w-100">Fechar</a>
     </div></div></div></div>
 
@@ -529,76 +507,61 @@ def cadastro():
 def dashboard():
     if 'email' not in session:
         return redirect(url_for('login'))
-    cfg, anuncios, ativos, concluidos, talao_atual, usuarios = get_dados()
-    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, usuarios=usuarios, qr_entrada=None, saida_recente=None)
+    cfg, anuncios, ativos, concluidos, talao_atual = get_dados()
+    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, qr_entrada=None, saida_recente=None)
 
 @app.route('/entrada', methods=['GET', 'POST'])
 def entrada():
     if 'email' not in session:
         return redirect(url_for('login'))
-
-    cfg, anuncios, ativos, concluidos, talao_atual, usuarios = get_dados()
-
+    
+    cfg, anuncios, ativos, concluidos, talao_atual = get_dados()
+    
     if request.method == 'POST':
         placa = request.form.get('placa', '').upper().strip()
-        modelo = request.form.get('modelo', '').strip()
-        cor = request.form.get('cor', '').strip()
-
-        try:
-            valor = float(
-                request.form.get(
-                    'valor',
-                    cfg['valor_diaria'] if cfg else 50.0
-                )
-            )
-        except (ValueError, TypeError):
-            valor = float(cfg['valor_diaria'] if cfg else 50.0)
-
-        hora = datetime.now(
-            ZoneInfo("America/Sao_Paulo")
-        ).strftime("%Y-%m-%d %H:%M:%S")
-
+        modelo = request.form.get('modelo', '')
+        cor = request.form.get('cor', '')
+        tipo_tarifa = request.form.get('tipo_tarifa', 'diaria')
+        valores = {
+            'diaria': float(cfg['valor_diaria']),
+            'van': float(cfg['valor_van']),
+            'pernoite': float(cfg['valor_pernoite'])
+        }
+        if tipo_tarifa not in valores:
+            tipo_tarifa = 'diaria'
+        valor = valores[tipo_tarifa]
+        hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
         conn = obter_conexao()
+        ja_ativo = conn.execute(
+            "SELECT id FROM veiculos WHERE placa=? AND status='ATIVO'", (placa,)
+        ).fetchone()
+        if ja_ativo:
+            conn.close()
+            return f"<h3>O veículo {placa} já está no pátio.</h3><a href='/dashboard'>Voltar</a>"
+
+        numero_talao = request.form.get('numero_talao', '').strip()
+        talao_em_uso = conn.execute(
+            "SELECT 1 FROM veiculos WHERE numero_talao=?", (numero_talao,)
+        ).fetchone() if numero_talao else True
+        if talao_em_uso:
+            numero_talao = gerar_numero_talao(conn)
 
         conn.execute(
-            """
-            INSERT INTO veiculos
-            (placa, modelo, cor, valor, hora_entrada, status)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                placa,
-                modelo,
-                cor,
-                valor,
-                hora,
-                'ATIVO'
-            )
+            """INSERT INTO veiculos
+               (placa, modelo, cor, valor, tipo_tarifa, numero_talao, hora_entrada)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (placa, modelo, cor, valor, tipo_tarifa, numero_talao, hora)
         )
-
         conn.commit()
         conn.close()
-
-        cfg, anuncios, ativos, concluidos, talao_atual, usuarios = get_dados()
-
-        qr_texto = f"PLACA:{placa}|ENTRADA:{hora}"
-
-        return render_template_string(
-            HTML_DASHBOARD,
-            cfg=cfg,
-            anuncios=anuncios,
-            ativos=ativos,
-            concluidos=concluidos,
-            talao_atual=talao_atual,
-            usuarios=usuarios,
-            qr_entrada=qr_texto,
-            placa_recente=placa,
-            modelo_recente=modelo,
-            cor_recente=cor,
-            valor_recente=valor,
-            saida_recente=None
-        )
-
+        
+        cfg, anuncios, ativos, concluidos, _ = get_dados()
+        talao_atual = numero_talao
+        qr_texto = f"PLACA:{placa}|TALAO:{numero_talao}|ENTRADA:{hora}"
+        
+        return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, qr_entrada=qr_texto, placa_recente=placa, modelo_recente=modelo, cor_recente=cor, valor_recente=valor, tipo_tarifa_recente=tipo_tarifa, saida_recente=None)
+    
     return redirect(url_for('dashboard'))
 
 @app.route('/reimprimir/<int:id>')
@@ -611,15 +574,17 @@ def reimprimir(id):
     anuncios = conn.execute("SELECT * FROM anuncios").fetchall()
     ativos = conn.execute("SELECT * FROM veiculos WHERE status='ATIVO' ORDER BY id DESC").fetchall()
     concluidos = conn.execute("SELECT * FROM veiculos WHERE status='FINALIZADO' ORDER BY id DESC").fetchall()
-    usuarios = conn.execute("SELECT * FROM usuarios").fetchall()
-    talao_atual = f"{random.randint(10000, 99999)}"
+    talao_atual = v['numero_talao'] if v and v['numero_talao'] else gerar_numero_talao(conn)
+    if v and not v['numero_talao']:
+        conn.execute("UPDATE veiculos SET numero_talao=? WHERE id=?", (talao_atual, id))
+        conn.commit()
     conn.close()
 
     if not v:
         return redirect(url_for('dashboard'))
 
-    qr_texto = f"PLACA:{v['placa']}|ENTRADA:{v['hora_entrada']}"
-    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, usuarios=usuarios, qr_entrada=qr_texto, placa_recente=v['placa'], modelo_recente=v['modelo'], cor_recente=v['cor'], valor_recente=v['valor'], saida_recente=None)
+    qr_texto = f"PLACA:{v['placa']}|TALAO:{talao_atual}|ENTRADA:{v['hora_entrada']}"
+    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, qr_entrada=qr_texto, placa_recente=v['placa'], modelo_recente=v['modelo'], cor_recente=v['cor'], valor_recente=v['valor'], tipo_tarifa_recente=v['tipo_tarifa'] or 'diaria', saida_recente=None)
 
 @app.route('/saida_scanner', methods=['POST'])
 def saida_scanner():
@@ -643,26 +608,14 @@ def saida_scanner():
         return f"<h3>Veículo com placa '{placa}' não encontrado no pátio ativo.</h3><a href='/dashboard'>Voltar</a>"
 
     fmt = "%Y-%m-%d %H:%M:%S"
-
-    entrada_dt = datetime.strptime(
-        v['hora_entrada'],
-        fmt
-    ).replace(tzinfo=ZoneInfo("America/Sao_Paulo"))
-
-    saida = datetime.now(
-        ZoneInfo("America/Sao_Paulo")
-    )
-
-    tempo_total = saida - entrada_dt
-    horas = tempo_total.total_seconds() / 3600
-
-    if horas < 0.1:
-        horas = 0.1
-
-    val_hora = v['valor'] if v['valor'] is not None else 10.0
-    valor_final = horas * val_hora
+    entrada = datetime.strptime(v['hora_entrada'], fmt)
+    saida = datetime.now()
+    tempo_total = saida - entrada
+    minutos = max(0, tempo_total.total_seconds() / 60)
+    valor_tarifa = float(v['valor'] if v['valor'] is not None else 0.0)
+    valor_final = 0.0 if minutos <= 15 else valor_tarifa
     hora_saida_str = saida.strftime(fmt)
-
+    
     conn.execute("UPDATE veiculos SET status='FINALIZADO', hora_saida=?, valor_total=? WHERE id=?", (hora_saida_str, valor_final, v['id']))
     conn.commit()
     
@@ -670,13 +623,12 @@ def saida_scanner():
     anuncios = conn.execute("SELECT * FROM anuncios").fetchall()
     ativos = conn.execute("SELECT * FROM veiculos WHERE status='ATIVO' ORDER BY id DESC").fetchall()
     concluidos = conn.execute("SELECT * FROM veiculos WHERE status='FINALIZADO' ORDER BY id DESC").fetchall()
-    usuarios = conn.execute("SELECT * FROM usuarios").fetchall()
-    talao_atual = f"{random.randint(10000, 99999)}"
+    talao_atual = v['numero_talao'] or gerar_numero_talao(conn)
     
     v_atualizado = conn.execute("SELECT * FROM veiculos WHERE id=:id", {"id": v['id']}).fetchone()
     conn.close()
     
-    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, usuarios=usuarios, saida_recente=v_atualizado, qr_entrada=None)
+    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, saida_recente=v_atualizado, qr_entrada=None)
 
 @app.route('/editar/<int:id>', methods=['POST'])
 def editar(id):
@@ -698,72 +650,39 @@ def excluir(id):
     conn.close()
     return redirect(url_for('dashboard'))
 
-@app.route('/salvar_config', methods=['GET', 'POST'])
+@app.route('/salvar_config', methods=['POST'])
 def salvar_config():
     if 'email' not in session:
         return redirect(url_for('login'))
-    if request.method == 'POST':
-        try:
-            conn = obter_conexao()
-            conn.execute("UPDATE configuracoes SET nome=?, cnpj=?, endereco=?, telefone=?, horario=?, mensagem=?, impressora_status=?, valor_diaria=?, valor_van=?, valor_pernoite=?, logo=? WHERE id=1",
-                         (
-                             request.form.get('nome', ''),
-                             request.form.get('cnpj', ''),
-                             request.form.get('endereco', ''),
-                             request.form.get('telefone', ''),
-                             request.form.get('horario', ''),
-                             request.form.get('mensagem', ''),
-                             request.form.get('imp', ''),
-                             float(request.form.get('valor_diaria', 50.0)),
-                             float(request.form.get('valor_van', 30.0)),
-                             float(request.form.get('valor_pernoite', 40.0)),
-                             request.form.get('logo', '')
-                         ))
-            conn.commit()
-            conn.close()
-            return redirect(url_for('dashboard'))
-        except Exception as e:
-            return f"Erro ao salvar configurações: {e}. <a href='/dashboard'>Voltar</a>"
-    return redirect(url_for('dashboard'))
-
-@app.route('/add_usuario', methods=['POST'])
-def add_usuario():
-    if 'email' not in session:
-        return redirect(url_for('login'))
-    email = request.form.get('novo_email', '').strip()
-    senha = request.form.get('nova_senha', '').strip()
-    if email and senha:
-        try:
-            conn = obter_conexao()
-            conn.execute("INSERT INTO usuarios (email, senha) VALUES (?, ?)", (email, senha))
-            conn.commit()
-            conn.close()
-        except:
-            pass
-    return redirect(url_for('dashboard'))
-
-@app.route('/del_usuario/<int:id>')
-def del_usuario(id):
-    if 'email' not in session:
-        return redirect(url_for('login'))
-    conn = obter_conexao()
-    total_users = conn.execute("SELECT COUNT(*) FROM usuarios").fetchone()[0]
-    if total_users > 1:
-        conn.execute("DELETE FROM usuarios WHERE id=?", (id,))
+    try:
+        conn = obter_conexao()
+        conn.execute("UPDATE configuracoes SET nome=?, cnpj=?, endereco=?, telefone=?, horario=?, mensagem=?, impressora_status=?, valor_diaria=?, valor_van=?, valor_pernoite=? WHERE id=1",
+                     (
+                         request.form.get('nome', ''),
+                         request.form.get('cnpj', ''),
+                         request.form.get('endereco', ''),
+                         request.form.get('telefone', ''),
+                         request.form.get('horario', ''),
+                         request.form.get('mensagem', ''),
+                         request.form.get('imp', ''),
+                         float(request.form.get('valor_diaria', 50.0)),
+                         float(request.form.get('valor_van', 30.0)),
+                         float(request.form.get('valor_pernoite', 40.0))
+                     ))
         conn.commit()
-    conn.close()
+        conn.close()
+    except Exception as e:
+        return f"Erro ao salvar configurações: {e}. <a href='/dashboard'>Voltar</a>"
     return redirect(url_for('dashboard'))
 
 @app.route('/add_anuncio', methods=['POST'])
 def add_anuncio():
     if 'email' not in session:
         return redirect(url_for('login'))
-    texto = request.form.get('texto', '').strip()
-    if texto:
-        conn = obter_conexao()
-        conn.execute("INSERT INTO anuncios (texto) VALUES (?)", (texto,))
-        conn.commit()
-        conn.close()
+    conn = obter_conexao()
+    conn.execute("INSERT INTO anuncios (texto) VALUES (?)", (request.form['texto'],))
+    conn.commit()
+    conn.close()
     return redirect(url_for('dashboard'))
 
 @app.route('/del_anuncio/<int:id>')
