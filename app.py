@@ -62,7 +62,7 @@ def inicializar_banco():
     tabelas_colunas = {
         'usuarios': [('empresa_id','INTEGER'),('nome','TEXT'),('email','TEXT'),('senha','TEXT'),('perfil',"TEXT DEFAULT 'funcionario'")],
         'configuracoes': [
-            ('empresa_id','INTEGER'),('nome',"TEXT DEFAULT 'NovaPark Pro'"),('cnpj','TEXT'),('endereco','TEXT'),
+            ('empresa_id','INTEGER'),('nome',"TEXT DEFAULT 'GLPPARK'"),('cnpj','TEXT'),('endereco','TEXT'),
             ('telefone','TEXT'),('horario','TEXT'),('mensagem','TEXT'),('impressora_status','TEXT'),
             ('valor_diaria','REAL DEFAULT 50'),('valor_van','REAL DEFAULT 30'),('valor_pernoite','REAL DEFAULT 40'),
             ('valor_hora','REAL DEFAULT 10'),('valor_fracao','REAL DEFAULT 5'),('minutos_fracao','INTEGER DEFAULT 30'),
@@ -98,6 +98,8 @@ def inicializar_banco():
         for tabela in ('usuarios','configuracoes','anuncios','veiculos'):
             conn.execute(f'UPDATE {tabela} SET empresa_id=? WHERE empresa_id IS NULL', (empresa_legada,))
         conn.execute("UPDATE usuarios SET perfil='admin' WHERE empresa_id=?", (empresa_legada,))
+    # Remove somente o nome antigo usado no protótipo; os demais nomes são preservados.
+    conn.execute("UPDATE configuracoes SET nome='GLPPARK' WHERE LOWER(COALESCE(nome,'')) LIKE '%manfrenate%'")
     conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_offline_empresa ON veiculos(empresa_id, offline_id)')
     conn.commit()
     conn.close()
@@ -151,13 +153,13 @@ HTML_LOGIN = """
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Glppark Pro</title>
+    <title>Login - GLPPARK</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>.eye-btn { cursor: pointer; position: absolute; right: 15px; top: 35px; }</style>
 </head>
 <body class="bg-light d-flex align-items-center justify-content-center vh-100">
     <div class="card shadow p-4" style="width: 100%; max-width: 400px;">
-        <h3 class="text-center mb-4 fw-bold text-primary">🚗 Glppark Pro</h3>
+        <h3 class="text-center mb-4 fw-bold text-primary">🚗 GLPPARK</h3>
         <form action="/fazer_login" method="POST">
             <div class="mb-3"><label class="form-label">E-mail</label><input type="email" name="email" class="form-control" required></div>
             <div class="mb-3 position-relative">
@@ -178,7 +180,7 @@ HTML_CADASTRO = """
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cadastro - Glppark Pro</title>
+    <title>Cadastro - GLPPARK</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>.eye-btn { cursor: pointer; position: absolute; right: 15px; top: 35px; }</style>
 </head>
@@ -207,7 +209,7 @@ HTML_DASHBOARD = """
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel - Glppark Pro</title>
+    <title>Painel - GLPPARK</title>
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#d35400">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -224,7 +226,7 @@ HTML_DASHBOARD = """
 </head>
 <body class="bg-light">
     <div style="background-color: #d35400; color: white; text-align: center; padding: 6px; font-size: 13px; font-weight: bold; display:flex; justify-content:center; align-items:center; gap:8px;">
-        {% if cfg.logo %}<img src="{{ cfg.logo }}" alt="Logo" style="max-height:32px; max-width:110px; object-fit:contain; background:white; padding:2px; border-radius:3px;">{% endif %}
+        {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="max-height:32px; max-width:110px; object-fit:contain; background:white; padding:2px; border-radius:3px;">{% endif %}
         <span>{{ cfg.nome }} | <a href="/logout" class="text-white">Sair</a></span>
     </div>
     <div class="container mt-3">
@@ -311,7 +313,7 @@ HTML_DASHBOARD = """
         <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-body text-center bg-white p-4">
             
             <div id="printableArea">
-                {% if cfg.logo %}<img src="{{ cfg.logo }}" alt="Logo" style="max-height:55px; max-width:160px; object-fit:contain; margin-bottom:5px;"><br>{% endif %}
+                {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="max-height:55px; max-width:160px; object-fit:contain; margin-bottom:5px;"><br>{% endif %}
                 <h5 class="fw-bold mb-1">{{ cfg.nome }}</h5>
                 <p class="small mb-1">CNPJ: {{ cfg.cnpj }}</p>
                 <p class="small mb-1">{{ cfg.endereco }}</p>
@@ -353,7 +355,7 @@ HTML_DASHBOARD = """
         <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-body text-center bg-white p-4">
             
             <div id="printableArea">
-                {% if cfg.logo %}<img src="{{ cfg.logo }}" alt="Logo" style="max-height:55px; max-width:160px; object-fit:contain; margin-bottom:5px;"><br>{% endif %}
+                {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="max-height:55px; max-width:160px; object-fit:contain; margin-bottom:5px;"><br>{% endif %}
                 <h5 class="fw-bold mb-1">{{ cfg.nome }}</h5>
                 <p class="small mb-1">CNPJ: {{ cfg.cnpj }}</p>
                 <p class="small mb-1">{{ cfg.endereco }}</p>
@@ -465,7 +467,7 @@ HTML_DASHBOARD = """
             <div class="form-text mb-2">Escolha uma imagem do celular (PNG, JPG, WEBP ou GIF).</div>
             {% if cfg.logo %}
             <div class="text-center mb-2">
-                <img src="{{ cfg.logo }}" alt="Prévia da logo" style="max-height:70px; max-width:180px; object-fit:contain;">
+                <img src="/logo?v={{ cfg.id }}" alt="Prévia da logo" style="max-height:70px; max-width:180px; object-fit:contain;">
                 <div><label class="small text-danger"><input type="checkbox" name="remover_logo" value="1"> Remover logo atual</label></div>
             </div>
             {% endif %}
@@ -581,6 +583,25 @@ def dashboard():
         return redirect(url_for('login'))
     cfg, anuncios, ativos, concluidos, talao_atual = get_dados()
     return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, qr_entrada=None, saida_recente=None)
+
+@app.route('/logo')
+def logo_empresa():
+    if 'empresa_id' not in session:
+        return '', 404
+    conn = obter_conexao()
+    cfg = conn.execute("SELECT logo FROM configuracoes WHERE empresa_id=?", (session['empresa_id'],)).fetchone()
+    conn.close()
+    logo = cfg['logo'] if cfg else ''
+    if not logo or not logo.startswith('data:') or ';base64,' not in logo:
+        return '', 404
+    try:
+        cabecalho, conteudo = logo.split(',', 1)
+        mimetype = cabecalho[5:].split(';', 1)[0]
+        resposta = app.response_class(base64.b64decode(conteudo), mimetype=mimetype)
+        resposta.headers['Cache-Control'] = 'private, max-age=3600'
+        return resposta
+    except Exception:
+        return '', 404
 
 @app.route('/entrada', methods=['GET', 'POST'])
 def entrada():
@@ -759,7 +780,7 @@ def salvar_config():
                 return "A logo deve ter no máximo 2 MB. <a href='/dashboard'>Voltar</a>"
             logo = f"data:{arquivo_logo.mimetype};base64,{base64.b64encode(dados_logo).decode('ascii')}"
 
-        nome = request.form.get('nome', '').strip() or 'GLPPARK PRO'
+        nome = request.form.get('nome', '').strip() or 'GLPPARK'
         conn.execute("UPDATE configuracoes SET nome=?, cnpj=?, endereco=?, telefone=?, horario=?, mensagem=?, impressora_status=?, valor_diaria=?, valor_van=?, valor_pernoite=?, valor_hora=?, valor_fracao=?, minutos_fracao=?, taxa_talao=?, total_vagas=?, logo=? WHERE empresa_id=?",
                      (
                          nome,
@@ -825,7 +846,7 @@ def excluir_funcionario(id):
         conn = obter_conexao(); conn.execute("DELETE FROM usuarios WHERE id=? AND empresa_id=? AND perfil!='admin'", (id, session['empresa_id'])); conn.commit(); conn.close()
     return redirect(url_for('funcionarios'))
 
-BASE_PRO = '''<!doctype html><html lang="pt-BR"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><title>{{titulo}}</title></head><body class="bg-light"><nav class="navbar navbar-dark bg-dark px-3"><span class="navbar-brand">NovaPark Pro — {{titulo}}</span><a href="/dashboard" class="btn btn-outline-light btn-sm">Painel</a></nav><main class="container py-3" style="max-width:900px">{{conteudo|safe}}</main></body></html>'''
+BASE_PRO = '''<!doctype html><html lang="pt-BR"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><title>GLPPARK — {{titulo}}</title></head><body class="bg-light"><nav class="navbar navbar-dark bg-dark px-3"><span class="navbar-brand">GLPPARK — {{titulo}}</span><a href="/dashboard" class="btn btn-outline-light btn-sm">Painel</a></nav><main class="container py-3" style="max-width:900px">{{conteudo|safe}}</main></body></html>'''
 
 def somente_admin(): return 'email' in session and session.get('perfil') == 'admin'
 
@@ -892,7 +913,7 @@ def exportar_csv():
 @app.route('/manifest.json')
 def manifest():
     return app.response_class(json.dumps({
-        'name':'NovaPark Pro','short_name':'NovaPark','start_url':'/dashboard',
+        'name':'GLPPARK','short_name':'GLPPARK','start_url':'/dashboard',
         'display':'standalone','background_color':'#f4f5f7','theme_color':'#d35400'
     }), mimetype='application/manifest+json')
 
@@ -906,20 +927,20 @@ self.addEventListener('fetch',e=>{if(e.request.method==='GET')e.respondWith(fetc
 """
     return app.response_class(js, mimetype='application/javascript', headers={'Service-Worker-Allowed':'/'})
 
-HTML_OFFLINE = r'''<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NovaPark Offline</title><link rel="manifest" href="/manifest.json"><meta name="theme-color" content="#d35400"><style>
+HTML_OFFLINE = r'''<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GLPPARK Offline</title><link rel="manifest" href="/manifest.json"><meta name="theme-color" content="#d35400"><style>
 *{box-sizing:border-box}body{margin:0;background:#f3f4f6;font:15px Arial;color:#222}.top{background:#d35400;color:#fff;padding:11px;text-align:center;font-weight:bold;position:sticky;top:0;z-index:2}.rede{padding:7px;text-align:center;background:#6c757d;color:white;font-size:12px}.wrap{max-width:720px;margin:auto;padding:12px}.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:12px}.btn{border:0;border-radius:7px;padding:12px 7px;color:#fff;font-weight:bold;background:#34495e}.green{background:#198754}.red{background:#dc3545}.orange{background:#e67e22}.card{display:none;background:white;border-radius:10px;padding:14px;margin-bottom:12px;box-shadow:0 2px 7px #0002}.card.on{display:block}label{display:block;margin-top:9px;font-weight:bold}input,select{width:100%;padding:11px;border:1px solid #ccc;border-radius:7px;margin-top:4px;font-size:16px}.full{width:100%;margin-top:11px}.item{border:1px solid #ddd;border-radius:7px;padding:10px;margin:8px 0}.muted{color:#666;font-size:12px}.logo{max-height:48px;max-width:140px;vertical-align:middle}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}@media print{body *{visibility:hidden}#recibo,#recibo *{visibility:visible}#recibo{display:block;position:absolute;left:0;top:0;width:100%;font-family:monospace;box-shadow:none}.no-print{display:none!important}}
-</style></head><body><div class="top"><img id="topLogo" class="logo" hidden> <span id="topNome">NovaPark Pro</span></div><div id="rede" class="rede">Modo offline</div><div class="wrap"><div class="tabs"><button class="btn green" onclick="aba('entrada')">ENTRADA</button><button class="btn red" onclick="aba('patio')">PÁTIO/SAÍDA</button><button id="configBtn" class="btn" onclick="aba('config')">CONFIG</button></div>
+</style></head><body><div class="top"><img id="topLogo" class="logo" hidden> <span id="topNome">GLPPARK</span></div><div id="rede" class="rede">Modo offline</div><div class="wrap"><div class="tabs"><button class="btn green" onclick="aba('entrada')">ENTRADA</button><button class="btn red" onclick="aba('patio')">PÁTIO/SAÍDA</button><button id="configBtn" class="btn" onclick="aba('config')">CONFIG</button></div>
 <section id="entrada" class="card on"><h3>Entrada de veículo</h3><label>Placa</label><input id="placa" maxlength="8" autocomplete="off"><label>Modelo</label><input id="modelo"><label>Cor</label><input id="cor"><label>Forma de cobrança</label><select id="tipo"><option value="diaria">Diária</option><option value="van">Van/Caminhão</option><option value="pernoite">Pernoite</option><option value="hora">Hora e fração</option><option value="mensalista">Mensalista</option></select><button class="btn green full" onclick="registrarEntrada()">Registrar e imprimir</button></section>
 <section id="patio" class="card"><h3>Veículos no pátio</h3><div id="lista"></div></section>
 <section id="config" class="card"><h3>Configurações</h3><label>Nome</label><input id="cNome"><label>CNPJ</label><input id="cCnpj"><label>Endereço</label><input id="cEndereco"><label>Telefone</label><input id="cTelefone"><label>Horário</label><input id="cHorario"><div class="grid"><div><label>Diária</label><input id="cDiaria" type="number" step=".01"></div><div><label>Van/Caminhão</label><input id="cVan" type="number" step=".01"></div></div><label>Pernoite</label><input id="cPernoite" type="number" step=".01"><label>Mensagem</label><input id="cMensagem"><label>Impressora</label><input id="cImpressora"><label>Logo</label><input id="cLogo" type="file" accept="image/*"><button class="btn full" onclick="salvarConfig()">Salvar configurações</button></section>
 <section id="recibo" class="card"><div id="reciboTexto"></div><button class="btn full no-print" style="background:#111" onclick="print()">Imprimir comprovante</button><button class="btn full no-print" onclick="aba('patio')">Fechar</button></section></div><script>
-const empresa=localStorage.getItem('novapark_empresa_atual')||'sem_empresa',KD='novapark_dados_'+empresa,KF='novapark_fila_'+empresa,KC='novapark_config_'+empresa;let veiculos=JSON.parse(localStorage.getItem(KD)||'[]'),fila=JSON.parse(localStorage.getItem(KF)||'[]'),cfg=JSON.parse(localStorage.getItem(KC)||'{"nome":"NovaPark Pro","diaria":50,"van":30,"pernoite":40}');const $=id=>document.getElementById(id);function persistir(){localStorage.setItem(KD,JSON.stringify(veiculos));localStorage.setItem(KF,JSON.stringify(fila))}function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2)}function data(s){let d=new Date(s);return isNaN(d)?s:d.toLocaleString('pt-BR')}function moeda(n){return Number(n||0).toFixed(2).replace('.',',')}function aba(id){document.querySelectorAll('.card').forEach(x=>x.classList.remove('on'));$(id).classList.add('on');if(id==='patio')listar()}
-function aplicar(){['Nome','Cnpj','Endereco','Telefone','Horario','Mensagem','Impressora'].forEach(x=>$('c'+x).value=cfg[x.toLowerCase()]||'');$('cDiaria').value=cfg.diaria||0;$('cVan').value=cfg.van||0;$('cPernoite').value=cfg.pernoite||0;$('topNome').textContent=cfg.nome||'NovaPark Pro';if(cfg.logo){$('topLogo').src=cfg.logo;$('topLogo').hidden=false}if(cfg.perfil!=='admin'){$('configBtn').remove();$('config').remove();document.querySelector('.tabs').style.gridTemplateColumns='1fr 1fr'}}
+const empresa=localStorage.getItem('novapark_empresa_atual')||'sem_empresa',KD='novapark_dados_'+empresa,KF='novapark_fila_'+empresa,KC='novapark_config_'+empresa;let veiculos=JSON.parse(localStorage.getItem(KD)||'[]'),fila=JSON.parse(localStorage.getItem(KF)||'[]'),cfg=JSON.parse(localStorage.getItem(KC)||'{"nome":"GLPPARK","diaria":50,"van":30,"pernoite":40}');const $=id=>document.getElementById(id);function persistir(){localStorage.setItem(KD,JSON.stringify(veiculos));localStorage.setItem(KF,JSON.stringify(fila))}function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2)}function data(s){let d=new Date(s);return isNaN(d)?s:d.toLocaleString('pt-BR')}function moeda(n){return Number(n||0).toFixed(2).replace('.',',')}function aba(id){document.querySelectorAll('.card').forEach(x=>x.classList.remove('on'));$(id).classList.add('on');if(id==='patio')listar()}
+function aplicar(){['Nome','Cnpj','Endereco','Telefone','Horario','Mensagem','Impressora'].forEach(x=>$('c'+x).value=cfg[x.toLowerCase()]||'');$('cDiaria').value=cfg.diaria||0;$('cVan').value=cfg.van||0;$('cPernoite').value=cfg.pernoite||0;$('topNome').textContent=cfg.nome||'GLPPARK';if(cfg.logo){$('topLogo').src=cfg.logo;$('topLogo').hidden=false}if(cfg.perfil!=='admin'){$('configBtn').remove();$('config').remove();document.querySelector('.tabs').style.gridTemplateColumns='1fr 1fr'}}
 function registrarEntrada(){let p=$('placa').value.trim().toUpperCase();if(!p)return alert('Digite a placa.');if(veiculos.some(v=>v.placa===p&&v.status==='ATIVO'))return alert('Essa placa já está no pátio.');let t=(cfg.placas_mensalistas||[]).includes(p)?'mensalista':$('tipo').value,v={offline_id:uid(),placa:p,modelo:$('modelo').value.trim(),cor:$('cor').value.trim(),tipo_tarifa:t,valor:t==='mensalista'?0:Number(cfg[t]||0),numero_talao:String(Math.floor(10000+Math.random()*90000)),hora_entrada:new Date().toISOString(),status:'ATIVO'};veiculos.push(v);fila.push({acao:'entrada',dados:v});persistir();comprovante(v,'ENTRADA');$('placa').value=$('modelo').value=$('cor').value=''}
 function listar(){let a=veiculos.filter(v=>v.status==='ATIVO');$('lista').innerHTML=a.length?a.map(v=>`<div class="item"><b>${v.placa}</b> — ${v.modelo||'Modelo não informado'}<div class="muted">Entrada: ${data(v.hora_entrada)} | Talão: ${v.numero_talao||'-'}</div><button class="btn red full" onclick="darSaida('${v.offline_id}')">Dar saída</button><button class="btn orange full" onclick="comprovantePorId('${v.offline_id}')">Reimprimir</button></div>`).join(''):'<p class="muted">Nenhum veículo no pátio.</p>'}
 function darSaida(id){let v=veiculos.find(x=>x.offline_id===id);if(!v)return;let agora=new Date(),mins=(agora-new Date(v.hora_entrada))/60000,bruto=0;if(mins>15&&v.tipo_tarifa!=='mensalista'){if(v.tipo_tarifa==='hora'){bruto=Number(cfg.hora||10);if(mins>60)bruto+=Math.ceil((mins-60)/Number(cfg.minutos_fracao||30))*Number(cfg.fracao||5)}else bruto=Number(v.valor)}let perdido=confirm('O talão foi perdido?');if(perdido)bruto+=Number(cfg.taxa_talao||0);let desconto=cfg.perfil==='admin'?Number(prompt('Desconto autorizado em R$ (0 para nenhum):','0')||0):0,pagamento=prompt('Pagamento: Dinheiro, Pix, Cartão de débito ou Cartão de crédito','Dinheiro')||'Dinheiro';v.hora_saida=agora.toISOString();v.valor_total=Math.max(0,bruto-desconto);v.forma_pagamento=pagamento;v.desconto=desconto;v.talao_perdido=perdido?1:0;v.status='FINALIZADO';fila.push({acao:'saida',dados:{offline_id:id,hora_saida:v.hora_saida,valor_total:v.valor_total,forma_pagamento:pagamento,desconto:desconto,talao_perdido:v.talao_perdido}});persistir();comprovante(v,'SAÍDA')}
-function comprovantePorId(id){let v=veiculos.find(x=>x.offline_id===id);if(v)comprovante(v,v.status==='ATIVO'?'ENTRADA':'SAÍDA')}function comprovante(v,t){$('reciboTexto').innerHTML=`<div style="text-align:center">${cfg.logo?`<img class="logo" src="${cfg.logo}"><br>`:''}<b>${cfg.nome||'NovaPark Pro'}</b><br><small>${cfg.cnpj||''}<br>${cfg.endereco||''}<br>${cfg.telefone||''}</small></div><hr><b>COMPROVANTE DE ${t}</b><p>Placa: <b>${v.placa}</b><br>Modelo: ${v.modelo||'-'}<br>Cor: ${v.cor||'-'}<br>Talão: ${v.numero_talao||'-'}<br>Entrada: ${data(v.hora_entrada)}${t==='SAÍDA'?`<br>Saída: ${data(v.hora_saida)}<br><b>Total: R$ ${moeda(v.valor_total)}</b>`:''}</p><hr><div style="text-align:center">${cfg.mensagem||''}</div>`;aba('recibo');setTimeout(()=>print(),300)}
-function salvarConfig(){if(cfg.perfil!=='admin')return;let n={perfil:'admin',nome:$('cNome').value.trim()||'NovaPark Pro',cnpj:$('cCnpj').value,endereco:$('cEndereco').value,telefone:$('cTelefone').value,horario:$('cHorario').value,diaria:Number($('cDiaria').value),van:Number($('cVan').value),pernoite:Number($('cPernoite').value),mensagem:$('cMensagem').value,impressora:$('cImpressora').value,logo:cfg.logo||''},f=$('cLogo').files[0],fim=()=>{cfg=n;localStorage.setItem(KC,JSON.stringify(cfg));fila.push({acao:'config',dados:cfg});persistir();aplicar();alert('Configurações salvas no celular.')};if(f){if(f.size>2097152)return alert('A logo deve ter no máximo 2 MB.');let r=new FileReader();r.onload=()=>{n.logo=r.result;fim()};r.readAsDataURL(f)}else fim()}
+function comprovantePorId(id){let v=veiculos.find(x=>x.offline_id===id);if(v)comprovante(v,v.status==='ATIVO'?'ENTRADA':'SAÍDA')}function comprovante(v,t){$('reciboTexto').innerHTML=`<div style="text-align:center">${cfg.logo?`<img class="logo" src="${cfg.logo}"><br>`:''}<b>${cfg.nome||'GLPPARK'}</b><br><small>${cfg.cnpj||''}<br>${cfg.endereco||''}<br>${cfg.telefone||''}</small></div><hr><b>COMPROVANTE DE ${t}</b><p>Placa: <b>${v.placa}</b><br>Modelo: ${v.modelo||'-'}<br>Cor: ${v.cor||'-'}<br>Talão: ${v.numero_talao||'-'}<br>Entrada: ${data(v.hora_entrada)}${t==='SAÍDA'?`<br>Saída: ${data(v.hora_saida)}<br><b>Total: R$ ${moeda(v.valor_total)}</b>`:''}</p><hr><div style="text-align:center">${cfg.mensagem||''}</div>`;aba('recibo');setTimeout(()=>print(),300)}
+function salvarConfig(){if(cfg.perfil!=='admin')return;let n={perfil:'admin',nome:$('cNome').value.trim()||'GLPPARK',cnpj:$('cCnpj').value,endereco:$('cEndereco').value,telefone:$('cTelefone').value,horario:$('cHorario').value,diaria:Number($('cDiaria').value),van:Number($('cVan').value),pernoite:Number($('cPernoite').value),mensagem:$('cMensagem').value,impressora:$('cImpressora').value,logo:cfg.logo||''},f=$('cLogo').files[0],fim=()=>{cfg=n;localStorage.setItem(KC,JSON.stringify(cfg));fila.push({acao:'config',dados:cfg});persistir();aplicar();alert('Configurações salvas no celular.')};if(f){if(f.size>2097152)return alert('A logo deve ter no máximo 2 MB.');let r=new FileReader();r.onload=()=>{n.logo=r.result;fim()};r.readAsDataURL(f)}else fim()}
 async function sincronizar(){if(!navigator.onLine||!fila.length)return;try{let r=await fetch('/api/sincronizar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({empresa_chave:empresa,operacoes:fila})});if(r.ok){fila=[];persistir();$('rede').textContent='Sincronização concluída';setTimeout(()=>location.href='/dashboard',1000)}else $('rede').textContent='Entre novamente para sincronizar'}catch(e){$('rede').textContent='Sem internet — dados seguros no celular'}}function rede(){$('rede').textContent=navigator.onLine?'Online — sincronizando...':'Modo offline — dados seguros no celular';if(navigator.onLine)sincronizar()}window.addEventListener('online',rede);window.addEventListener('offline',rede);aplicar();listar();rede();if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js');
 </script></body></html>'''
 
@@ -957,7 +978,7 @@ def sincronizar_offline():
                 if vid and total>0 and not conn.execute("SELECT 1 FROM movimentos_caixa WHERE empresa_id=? AND veiculo_id=? AND tipo='RECEITA'",(eid,vid)).fetchone():
                     caixa=obter_caixa_aberto(conn);conn.execute("INSERT INTO movimentos_caixa(empresa_id,caixa_id,usuario_id,veiculo_id,tipo,descricao,valor,forma_pagamento,criado_em) VALUES(?,?,?,?,?,?,?,?,?)",(eid,caixa['id'] if caixa else None,session.get('usuario_id'),vid,'RECEITA','Saída offline',total,pag,hs))
             elif a=='config' and session.get('perfil')=='admin':
-                conn.execute('''UPDATE configuracoes SET nome=?,cnpj=?,endereco=?,telefone=?,horario=?,mensagem=?,impressora_status=?,valor_diaria=?,valor_van=?,valor_pernoite=?,logo=? WHERE empresa_id=?''',(d.get('nome','NovaPark Pro'),d.get('cnpj',''),d.get('endereco',''),d.get('telefone',''),d.get('horario',''),d.get('mensagem',''),d.get('impressora',''),float(d.get('diaria',50)),float(d.get('van',30)),float(d.get('pernoite',40)),d.get('logo',''),eid))
+                conn.execute('''UPDATE configuracoes SET nome=?,cnpj=?,endereco=?,telefone=?,horario=?,mensagem=?,impressora_status=?,valor_diaria=?,valor_van=?,valor_pernoite=?,logo=? WHERE empresa_id=?''',(d.get('nome','GLPPARK'),d.get('cnpj',''),d.get('endereco',''),d.get('telefone',''),d.get('horario',''),d.get('mensagem',''),d.get('impressora',''),float(d.get('diaria',50)),float(d.get('van',30)),float(d.get('pernoite',40)),d.get('logo',''),eid))
         conn.commit()
     except Exception as e:conn.rollback();conn.close();return {'ok':False,'erro':str(e)},400
     conn.close();return {'ok':True,'sincronizadas':len(corpo.get('operacoes',[]))}
