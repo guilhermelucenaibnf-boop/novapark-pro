@@ -2,71 +2,90 @@ import os
 import random
 import sqlite3
 import base64
+import secrets
+import json
+import math
+import csv
+import io
 from datetime import datetime
 from flask import Flask, render_template_string, request, redirect, url_for, session
+from werkzeug.security import generate_password_hash, check_password_hash
+
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+except ImportError:
+    psycopg2 = None
 
 app = Flask(__name__)
-app.secret_key = "park_pro_2026_completo"
+app.secret_key = os.environ.get("SECRET_KEY", "troque-esta-chave-no-render")
 UPLOAD_FOLDER = 'static/uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-def obter_conexao():
-    conn = sqlite3.connect("estacionamento.db")
-    conn.row_factory = sqlite3.Row
-    return conn
+class Conexao:
+    def __init__(self):
+        url = os.environ.get('DATABASE_URL', '')
+        self.pg = bool(url)
+        if self.pg:
+            if not psycopg2:
+                raise RuntimeError('psycopg2 não instalado')
+            self.raw = psycopg2.connect(url, cursor_factory=RealDictCursor)
+        else:
+            self.raw = sqlite3.connect('estacionamento.db')
+            self.raw.row_factory = sqlite3.Row
+    def execute(self, sql, params=()):
+        if self.pg:
+            sql = sql.replace('?', '%s')
+            if isinstance(params, dict):
+                for chave in params: sql = sql.replace(':' + chave, '%(' + chave + ')s')
+            cur = self.raw.cursor(); cur.execute(sql, params); return cur
+        return self.raw.execute(sql, params)
+    def commit(self): self.raw.commit()
+    def rollback(self): self.raw.rollback()
+    def close(self): self.raw.close()
+
+def obter_conexao(): return Conexao()
 
 def inicializar_banco():
     conn = obter_conexao()
-    cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS usuarios (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT UNIQUE NOT NULL, senha TEXT NOT NULL
-    )''')
-    cursor.execute('''CREATE TABLE IF NOT EXISTS configuracoes (
-        id INTEGER PRIMARY KEY, nome TEXT, cnpj TEXT, endereco TEXT, telefone TEXT, horario TEXT, mensagem TEXT, impressora_status TEXT, valor_diaria REAL DEFAULT 50.0, valor_van REAL DEFAULT 30.0, valor_pernoite REAL DEFAULT 40.0, logo TEXT
-    )''')
-    cursor.execute('''CREATE TABLE IF NOT EXISTS anuncios (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, texto TEXT
-    )''')
-    cursor.execute('''CREATE TABLE IF NOT EXISTS veiculos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, placa TEXT NOT NULL, modelo TEXT, cor TEXT,
-        valor REAL DEFAULT 10.0, tipo_tarifa TEXT DEFAULT 'diaria', numero_talao TEXT,
-        hora_entrada TEXT, hora_saida TEXT, valor_total REAL, status TEXT DEFAULT 'ATIVO'
-    )''')
-    
-    cols_c = [col[1] for col in cursor.execute("PRAGMA table_info(configuracoes)").fetchall()]
-    if 'valor_diaria' not in cols_c:
-        cursor.execute("ALTER TABLE configuracoes ADD COLUMN valor_diaria REAL DEFAULT 50.0")
-    if 'valor_van' not in cols_c:
-        cursor.execute("ALTER TABLE configuracoes ADD COLUMN valor_van REAL DEFAULT 30.0")
-    if 'valor_pernoite' not in cols_c:
-        cursor.execute("ALTER TABLE configuracoes ADD COLUMN valor_pernoite REAL DEFAULT 40.0")
-    if 'impressora_status' not in cols_c:
-        cursor.execute("ALTER TABLE configuracoes ADD COLUMN impressora_status TEXT")
-    if 'logo' not in cols_c:
-        cursor.execute("ALTER TABLE configuracoes ADD COLUMN logo TEXT")
-
-    cols_v = [col[1] for col in cursor.execute("PRAGMA table_info(veiculos)").fetchall()]
-    if 'valor' not in cols_v:
-        cursor.execute("ALTER TABLE veiculos ADD COLUMN valor REAL DEFAULT 10.0")
-    if 'modelo' not in cols_v:
-        cursor.execute("ALTER TABLE veiculos ADD COLUMN modelo TEXT")
-    if 'cor' not in cols_v:
-        cursor.execute("ALTER TABLE veiculos ADD COLUMN cor TEXT")
-    if 'valor_total' not in cols_v:
-        cursor.execute("ALTER TABLE veiculos ADD COLUMN valor_total REAL")
-    if 'hora_saida' not in cols_v:
-        cursor.execute("ALTER TABLE veiculos ADD COLUMN hora_saida TEXT")
-    if 'status' not in cols_v:
-        cursor.execute("ALTER TABLE veiculos ADD COLUMN status TEXT DEFAULT 'ATIVO'")
-    if 'tipo_tarifa' not in cols_v:
-        cursor.execute("ALTER TABLE veiculos ADD COLUMN tipo_tarifa TEXT DEFAULT 'diaria'")
-    if 'numero_talao' not in cols_v:
-        cursor.execute("ALTER TABLE veiculos ADD COLUMN numero_talao TEXT")
-
-    cursor.execute("SELECT COUNT(*) FROM configuracoes")
-    if cursor.fetchone()[0] == 0:
-        cursor.execute("INSERT INTO configuracoes (id, nome, cnpj, endereco, telefone, horario, mensagem, impressora_status, valor_diaria, valor_van, valor_pernoite, logo) VALUES (1, 'GLPPARK PRO', '00.000.000/0001-00', 'Rua Exemplo, 123', '(21) 99999-9999', '07:00-22:00', 'Seja Bem-Vindo!', 'Thermer Bluetooth', 50.0, 30.0, 40.0, '')")
-
+    auto = 'SERIAL PRIMARY KEY' if conn.pg else 'INTEGER PRIMARY KEY AUTOINCREMENT'
+    conn.execute(f'''CREATE TABLE IF NOT EXISTS empresas (id {auto}, nome TEXT NOT NULL, codigo TEXT UNIQUE NOT NULL, ativo INTEGER DEFAULT 1)''')
+    conn.execute(f'''CREATE TABLE IF NOT EXISTS usuarios (id {auto}, empresa_id INTEGER NOT NULL, nome TEXT, email TEXT UNIQUE NOT NULL, senha TEXT NOT NULL, perfil TEXT DEFAULT 'funcionario')''')
+    conn.execute(f'''CREATE TABLE IF NOT EXISTS configuracoes (id {auto}, empresa_id INTEGER UNIQUE NOT NULL, nome TEXT, cnpj TEXT, endereco TEXT, telefone TEXT, horario TEXT, mensagem TEXT, impressora_status TEXT, valor_diaria REAL DEFAULT 50, valor_van REAL DEFAULT 30, valor_pernoite REAL DEFAULT 40, valor_hora REAL DEFAULT 10, valor_fracao REAL DEFAULT 5, minutos_fracao INTEGER DEFAULT 30, taxa_talao REAL DEFAULT 30, total_vagas INTEGER DEFAULT 50, logo TEXT)''')
+    conn.execute(f'''CREATE TABLE IF NOT EXISTS anuncios (id {auto}, empresa_id INTEGER NOT NULL, texto TEXT)''')
+    conn.execute(f'''CREATE TABLE IF NOT EXISTS veiculos (id {auto}, empresa_id INTEGER NOT NULL, offline_id TEXT, placa TEXT NOT NULL, modelo TEXT, cor TEXT, valor REAL DEFAULT 10, tipo_tarifa TEXT DEFAULT 'diaria', numero_talao TEXT, hora_entrada TEXT, hora_saida TEXT, valor_total REAL, status TEXT DEFAULT 'ATIVO', forma_pagamento TEXT, desconto REAL DEFAULT 0, talao_perdido INTEGER DEFAULT 0, mensalista_id INTEGER, cancelado INTEGER DEFAULT 0, observacao TEXT)''')
+    conn.execute(f'''CREATE TABLE IF NOT EXISTS mensalistas (id {auto}, empresa_id INTEGER NOT NULL, nome TEXT NOT NULL, documento TEXT, telefone TEXT, placa TEXT NOT NULL, modelo TEXT, valor_mensal REAL DEFAULT 0, dia_vencimento INTEGER DEFAULT 10, ativo INTEGER DEFAULT 1)''')
+    conn.execute(f'''CREATE TABLE IF NOT EXISTS caixas (id {auto}, empresa_id INTEGER NOT NULL, usuario_id INTEGER NOT NULL, aberto_em TEXT, fechado_em TEXT, saldo_inicial REAL DEFAULT 0, saldo_final REAL, status TEXT DEFAULT 'ABERTO')''')
+    conn.execute(f'''CREATE TABLE IF NOT EXISTS movimentos_caixa (id {auto}, empresa_id INTEGER NOT NULL, caixa_id INTEGER, usuario_id INTEGER, veiculo_id INTEGER, tipo TEXT NOT NULL, descricao TEXT, valor REAL DEFAULT 0, forma_pagamento TEXT, criado_em TEXT)''')
+    conn.execute(f'''CREATE TABLE IF NOT EXISTS auditoria (id {auto}, empresa_id INTEGER NOT NULL, usuario_id INTEGER, acao TEXT, detalhes TEXT, criado_em TEXT)''')
+    # Migra automaticamente a versão antiga, preservando os dados existentes.
+    tabelas_colunas = {
+        'usuarios': [('empresa_id','INTEGER'),('nome','TEXT'),('perfil',"TEXT DEFAULT 'funcionario'")],
+        'configuracoes': [('empresa_id','INTEGER'),('valor_hora','REAL DEFAULT 10'),('valor_fracao','REAL DEFAULT 5'),('minutos_fracao','INTEGER DEFAULT 30'),('taxa_talao','REAL DEFAULT 30'),('total_vagas','INTEGER DEFAULT 50')], 'anuncios': [('empresa_id','INTEGER')],
+        'veiculos': [('empresa_id','INTEGER'),('offline_id','TEXT'),('forma_pagamento','TEXT'),('desconto','REAL DEFAULT 0'),('talao_perdido','INTEGER DEFAULT 0'),('mensalista_id','INTEGER'),('cancelado','INTEGER DEFAULT 0'),('observacao','TEXT')]
+    }
+    if conn.pg:
+        for tabela, colunas in tabelas_colunas.items():
+            for coluna, tipo in colunas: conn.execute(f'ALTER TABLE {tabela} ADD COLUMN IF NOT EXISTS {coluna} {tipo}')
+    else:
+        for tabela, colunas in tabelas_colunas.items():
+            existentes = {r[1] for r in conn.execute(f'PRAGMA table_info({tabela})').fetchall()}
+            for coluna, tipo in colunas:
+                if coluna not in existentes: conn.execute(f'ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}')
+    legado = conn.execute('SELECT COUNT(*) AS total FROM configuracoes WHERE empresa_id IS NULL').fetchone()
+    total_legado = legado['total'] if hasattr(legado, 'keys') else legado[0]
+    if total_legado:
+        primeira = conn.execute('SELECT id FROM empresas ORDER BY id LIMIT 1').fetchone()
+        if primeira:
+            empresa_legada = primeira['id']
+        elif conn.pg:
+            empresa_legada = conn.execute("INSERT INTO empresas(nome,codigo) VALUES (?,?) RETURNING id", ('Empresa principal', secrets.token_hex(5))).fetchone()['id']
+        else:
+            empresa_legada = conn.execute("INSERT INTO empresas(nome,codigo) VALUES (?,?)", ('Empresa principal', secrets.token_hex(5))).lastrowid
+        for tabela in ('usuarios','configuracoes','anuncios','veiculos'):
+            conn.execute(f'UPDATE {tabela} SET empresa_id=? WHERE empresa_id IS NULL', (empresa_legada,))
+        conn.execute("UPDATE usuarios SET perfil='admin' WHERE empresa_id=?", (empresa_legada,))
+    conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_offline_empresa ON veiculos(empresa_id, offline_id)')
     conn.commit()
     conn.close()
 
@@ -75,7 +94,7 @@ def gerar_numero_talao(conn):
     for _ in range(1000):
         numero = str(random.randint(10000, 99999))
         existe = conn.execute(
-            "SELECT 1 FROM veiculos WHERE numero_talao=? LIMIT 1", (numero,)
+            "SELECT 1 FROM veiculos WHERE empresa_id=? AND numero_talao=? LIMIT 1", (session['empresa_id'], numero)
         ).fetchone()
         if not existe:
             return numero
@@ -83,16 +102,36 @@ def gerar_numero_talao(conn):
 
 
 def get_dados():
+    empresa_id = session['empresa_id']
     conn = obter_conexao()
-    cfg = conn.execute("SELECT * FROM configuracoes WHERE id=1").fetchone()
-    anuncios = conn.execute("SELECT * FROM anuncios").fetchall()
-    ativos = conn.execute("SELECT * FROM veiculos WHERE status='ATIVO' ORDER BY id DESC").fetchall()
-    concluidos = conn.execute("SELECT * FROM veiculos WHERE status='FINALIZADO' ORDER BY id DESC").fetchall()
+    cfg = conn.execute("SELECT * FROM configuracoes WHERE empresa_id=?", (empresa_id,)).fetchone()
+    anuncios = conn.execute("SELECT * FROM anuncios WHERE empresa_id=?", (empresa_id,)).fetchall()
+    ativos = conn.execute("SELECT * FROM veiculos WHERE empresa_id=? AND status='ATIVO' ORDER BY id DESC", (empresa_id,)).fetchall()
+    concluidos = conn.execute("SELECT * FROM veiculos WHERE empresa_id=? AND status='FINALIZADO' ORDER BY id DESC", (empresa_id,)).fetchall()
     
     num_talao = gerar_numero_talao(conn)
     
     conn.close()
     return cfg, anuncios, ativos, concluidos, num_talao
+
+def registrar_auditoria(conn, acao, detalhes=''):
+    conn.execute("INSERT INTO auditoria(empresa_id,usuario_id,acao,detalhes,criado_em) VALUES(?,?,?,?,?)", (session['empresa_id'], session.get('usuario_id'), acao, detalhes, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+
+def obter_caixa_aberto(conn):
+    return conn.execute("SELECT * FROM caixas WHERE empresa_id=? AND status='ABERTO' ORDER BY id DESC LIMIT 1", (session['empresa_id'],)).fetchone()
+
+def calcular_cobranca(v, cfg, minutos, talao_perdido=False, desconto=0):
+    if minutos <= 15 or v['tipo_tarifa'] == 'mensalista':
+        bruto = 0.0
+    elif v['tipo_tarifa'] == 'hora':
+        bruto = float(cfg['valor_hora'])
+        if minutos > 60:
+            fracoes = math.ceil((minutos - 60) / max(1, int(cfg['minutos_fracao'])))
+            bruto += fracoes * float(cfg['valor_fracao'])
+    else:
+        bruto = float(v['valor'] or 0)
+    if talao_perdido: bruto += float(cfg['taxa_talao'] or 0)
+    return max(0.0, bruto - max(0.0, float(desconto or 0)))
 
 HTML_LOGIN = """
 <!DOCTYPE html>
@@ -134,6 +173,8 @@ HTML_CADASTRO = """
     <div class="card shadow p-4" style="width: 100%; max-width: 400px;">
         <h3 class="text-center mb-4 text-success fw-bold">Novo Cadastro</h3>
         <form action="/cadastro" method="POST">
+            <div class="mb-3"><label class="form-label">Nome da empresa</label><input name="empresa" class="form-control" required></div>
+            <div class="mb-3"><label class="form-label">Seu nome</label><input name="nome_usuario" class="form-control" required></div>
             <div class="mb-3"><label class="form-label">E-mail</label><input type="email" name="email" class="form-control" required></div>
             <div class="mb-3 position-relative">
                 <label class="form-label">Senha</label>
@@ -154,6 +195,8 @@ HTML_DASHBOARD = """
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Painel - Glppark Pro</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#d35400">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
@@ -173,17 +216,22 @@ HTML_DASHBOARD = """
     </div>
     <div class="container mt-3">
         <div class="row mb-2">
-            <div class="col-6"><div class="card text-center p-2 fw-bold text-secondary bg-white border" style="font-size: 12px;">Vagas: <span class="text-dark">50</span> | Talão: <span class="text-danger">Nº {{ talao_atual }}</span></div></div>
+            <div class="col-6"><div class="card text-center p-2 fw-bold text-secondary bg-white border" style="font-size: 12px;">Livres: <span class="text-dark">{{ [cfg.total_vagas - (ativos|length), 0]|max }}</span>/{{ cfg.total_vagas }} | Talão: <span class="text-danger">Nº {{ talao_atual }}</span></div></div>
             <div class="col-6"><div class="card text-center p-2 fw-bold text-white bg-dark" style="font-size: 12px;">Ativos: {{ ativos|length }} | Saídas: {{ concluidos|length }}</div></div>
         </div>
         <div class="row">
             <div class="col-6"><button class="btn-grid bg-success" data-bs-toggle="modal" data-bs-target="#mEntrada">📥 ENTRADA</button></div>
             <div class="col-6"><button class="btn-grid bg-danger" data-bs-toggle="modal" data-bs-target="#mSaida">📤 SAÍDA & SCANNER</button></div>
             <div class="col-6"><button class="btn-grid bg-secondary" data-bs-toggle="modal" data-bs-target="#mPatio">🅿️ PÁTIO</button></div>
+            {% if session.perfil == 'admin' %}
             <div class="col-6"><button class="btn-grid" style="background-color: #34495e;" data-bs-toggle="modal" data-bs-target="#mConfig">⚙️ CONFIG</button></div>
             <div class="col-6"><button class="btn-grid" style="background-color: #e67e22;" data-bs-toggle="modal" data-bs-target="#mCaixa">📦 CAIXA</button></div>
             <div class="col-6"><button class="btn-grid" style="background-color: #8e44ad;" data-bs-toggle="modal" data-bs-target="#mEstatisticas">📊 ESTATÍSTICAS</button></div>
             <div class="col-12"><button class="btn-grid bg-primary" data-bs-toggle="modal" data-bs-target="#mAnuncios">📢 ANÚNCIOS</button></div>
+            <div class="col-6"><button class="btn-grid bg-success" onclick="location.href='/mensalistas'">👤 MENSALISTAS</button></div>
+            <div class="col-6"><button class="btn-grid bg-dark" onclick="location.href='/financeiro'">💰 FINANCEIRO</button></div>
+            <div class="col-12"><button class="btn-grid" style="background:#0d6efd" onclick="location.href='/relatorios'">📄 RELATÓRIOS</button></div>
+            {% endif %}
         </div>
     </div>
 
@@ -194,86 +242,42 @@ HTML_DASHBOARD = """
             <input type="hidden" name="numero_talao" value="{{ talao_atual }}">
             <label class="small">Placa:</label><input name="placa" class="form-control mb-2 text-uppercase" placeholder="Ex: ABC-1234" required>
             
-            <label class="small fw-bold">Modelo do Carro / Fabricante:</label>
-            <select name="modelo" class="form-select mb-2" required>
-                <option value="" disabled selected>Selecione o modelo...</option>
-                <optgroup label="Fiat">
-                    <option value="Fiat Uno">Fiat Uno</option>
-                    <option value="Fiat Palio">Fiat Palio</option>
-                    <option value="Fiat Mobi">Fiat Mobi</option>
-                    <option value="Fiat Argo">Fiat Argo</option>
-                    <option value="Fiat Strada">Fiat Strada</option>
-                    <option value="Fiat Toro">Fiat Toro</option>
-                    <option value="Fiat Fiorino">Fiat Fiorino</option>
-                </optgroup>
-                <optgroup label="Volkswagen">
-                    <option value="VW Gol">VW Gol</option>
-                    <option value="VW Polo">VW Polo</option>
-                    <option value="VW Saveiro">VW Saveiro</option>
-                    <option value="VW Voyage">VW Voyage</option>
-                    <option value="VW T-Cross">VW T-Cross</option>
-                    <option value="VW Nivus">VW Nivus</option>
-                    <option value="VW Fox">VW Fox</option>
-                </optgroup>
-                <optgroup label="Chevrolet">
-                    <option value="Chevrolet Onix">Chevrolet Onix</option>
-                    <option value="Chevrolet Prisma">Chevrolet Prisma</option>
-                    <option value="Chevrolet Tracker">Chevrolet Tracker</option>
-                    <option value="Chevrolet S10">Chevrolet S10</option>
-                    <option value="Chevrolet Montana">Chevrolet Montana</option>
-                    <option value="Chevrolet Classic">Chevrolet Classic</option>
-                </optgroup>
-                <optgroup label="Hyundai">
-                    <option value="Hyundai HB20">Hyundai HB20</option>
-                    <option value="Hyundai Creta">Hyundai Creta</option>
-                    <option value="Hyundai Tucson">Hyundai Tucson</option>
-                </optgroup>
-                <optgroup label="Toyota / Honda">
-                    <option value="Toyota Corolla">Toyota Corolla</option>
-                    <option value="Toyota Hilux">Toyota Hilux</option>
-                    <option value="Toyota Etios">Toyota Etios</option>
-                    <option value="Honda Civic">Honda Civic</option>
-                    <option value="Honda Fit">Honda Fit</option>
-                    <option value="Honda HR-V">Honda HR-V</option>
-                </optgroup>
-                <optgroup label="Renault / Ford / Jeep">
-                    <option value="Renault Kwid">Renault Kwid</option>
-                    <option value="Renault Sandero">Renault Sandero</option>
-                    <option value="Renault Logan">Renault Logan</option>
-                    <option value="Ford Ka">Ford Ka</option>
-                    <option value="Ford Ranger">Ford Ranger</option>
-                    <option value="Jeep Renegade">Jeep Renegade</option>
-                    <option value="Jeep Compass">Jeep Compass</option>
-                </optgroup>
-                <optgroup label="Outros / Motos">
-                    <option value="Moto Honda CG">Moto Honda CG</option>
-                    <option value="Moto Yamaha">Moto Yamaha</option>
-                    <option value="Van / Utilitário">Van / Utilitário</option>
-                    <option value="Outro Veículo">Outro Veículo</option>
-                </optgroup>
-            </select>
+            <label class="small fw-bold">Modelo / fabricante:</label>
+            <input name="modelo" list="listaModelos" class="form-control mb-2" placeholder="Digite para pesquisar, ex.: Corolla" autocomplete="off" required>
+            <datalist id="listaModelos">
+                <option value="Fiat 500"><option value="Fiat Argo"><option value="Fiat Bravo"><option value="Fiat Cronos"><option value="Fiat Doblo"><option value="Fiat Fastback"><option value="Fiat Fiorino"><option value="Fiat Freemont"><option value="Fiat Grand Siena"><option value="Fiat Idea"><option value="Fiat Linea"><option value="Fiat Marea"><option value="Fiat Mobi"><option value="Fiat Palio"><option value="Fiat Pulse"><option value="Fiat Punto"><option value="Fiat Siena"><option value="Fiat Strada"><option value="Fiat Tempra"><option value="Fiat Tipo"><option value="Fiat Toro"><option value="Fiat Uno">
+                <option value="Volkswagen Amarok"><option value="Volkswagen Bora"><option value="Volkswagen Brasília"><option value="Volkswagen CrossFox"><option value="Volkswagen Fox"><option value="Volkswagen Fusca"><option value="Volkswagen Gol"><option value="Volkswagen Golf"><option value="Volkswagen Jetta"><option value="Volkswagen Kombi"><option value="Volkswagen Nivus"><option value="Volkswagen Parati"><option value="Volkswagen Passat"><option value="Volkswagen Polo"><option value="Volkswagen Santana"><option value="Volkswagen Saveiro"><option value="Volkswagen SpaceFox"><option value="Volkswagen T-Cross"><option value="Volkswagen Taos"><option value="Volkswagen Tiguan"><option value="Volkswagen Up"><option value="Volkswagen Virtus"><option value="Volkswagen Voyage">
+                <option value="Chevrolet Agile"><option value="Chevrolet Astra"><option value="Chevrolet Blazer"><option value="Chevrolet Camaro"><option value="Chevrolet Captiva"><option value="Chevrolet Celta"><option value="Chevrolet Classic"><option value="Chevrolet Cobalt"><option value="Chevrolet Corsa"><option value="Chevrolet Cruze"><option value="Chevrolet Equinox"><option value="Chevrolet Meriva"><option value="Chevrolet Montana"><option value="Chevrolet Monza"><option value="Chevrolet Onix"><option value="Chevrolet Prisma"><option value="Chevrolet S10"><option value="Chevrolet Spin"><option value="Chevrolet Tracker"><option value="Chevrolet Trailblazer"><option value="Chevrolet Vectra"><option value="Chevrolet Zafira">
+                <option value="Ford Bronco"><option value="Ford Courier"><option value="Ford EcoSport"><option value="Ford Edge"><option value="Ford Escort"><option value="Ford F-1000"><option value="Ford Fiesta"><option value="Ford Focus"><option value="Ford Fusion"><option value="Ford Ka"><option value="Ford Maverick"><option value="Ford Mustang"><option value="Ford Ranger"><option value="Ford Territory"><option value="Ford Transit">
+                <option value="Toyota Bandeirante"><option value="Toyota Camry"><option value="Toyota Corolla"><option value="Toyota Corolla Cross"><option value="Toyota Etios"><option value="Toyota Hilux"><option value="Toyota Prius"><option value="Toyota RAV4"><option value="Toyota SW4"><option value="Toyota Yaris">
+                <option value="Honda Accord"><option value="Honda City"><option value="Honda Civic"><option value="Honda CR-V"><option value="Honda Fit"><option value="Honda HR-V"><option value="Honda WR-V"><option value="Honda ZR-V">
+                <option value="Hyundai Azera"><option value="Hyundai Creta"><option value="Hyundai Elantra"><option value="Hyundai HB20"><option value="Hyundai HB20S"><option value="Hyundai i30"><option value="Hyundai ix35"><option value="Hyundai Santa Fe"><option value="Hyundai Sonata"><option value="Hyundai Tucson"><option value="Hyundai Veracruz">
+                <option value="Renault Captur"><option value="Renault Clio"><option value="Renault Duster"><option value="Renault Fluence"><option value="Renault Kardian"><option value="Renault Kangoo"><option value="Renault Kwid"><option value="Renault Logan"><option value="Renault Master"><option value="Renault Megane"><option value="Renault Oroch"><option value="Renault Sandero"><option value="Renault Scenic"><option value="Renault Stepway">
+                <option value="Jeep Cherokee"><option value="Jeep Commander"><option value="Jeep Compass"><option value="Jeep Grand Cherokee"><option value="Jeep Renegade"><option value="Jeep Wrangler">
+                <option value="Nissan Frontier"><option value="Nissan Kicks"><option value="Nissan Leaf"><option value="Nissan Livina"><option value="Nissan March"><option value="Nissan Pathfinder"><option value="Nissan Sentra"><option value="Nissan Tiida"><option value="Nissan Versa"><option value="Nissan X-Trail">
+                <option value="Peugeot 2008"><option value="Peugeot 206"><option value="Peugeot 207"><option value="Peugeot 208"><option value="Peugeot 3008"><option value="Peugeot 307"><option value="Peugeot 308"><option value="Peugeot 408"><option value="Peugeot 5008"><option value="Peugeot Boxer"><option value="Peugeot Expert"><option value="Peugeot Partner">
+                <option value="Citroën Aircross"><option value="Citroën C3"><option value="Citroën C3 Aircross"><option value="Citroën C4 Cactus"><option value="Citroën C4 Lounge"><option value="Citroën C5"><option value="Citroën Jumpy"><option value="Citroën Xsara Picasso">
+                <option value="Mitsubishi ASX"><option value="Mitsubishi Eclipse Cross"><option value="Mitsubishi L200"><option value="Mitsubishi Lancer"><option value="Mitsubishi Outlander"><option value="Mitsubishi Pajero"><option value="Mitsubishi Pajero Sport"><option value="Mitsubishi Triton">
+                <option value="Kia Bongo"><option value="Kia Carnival"><option value="Kia Cerato"><option value="Kia Mohave"><option value="Kia Niro"><option value="Kia Picanto"><option value="Kia Sorento"><option value="Kia Soul"><option value="Kia Sportage"><option value="Kia Stonic">
+                <option value="Chery Arrizo 5"><option value="Chery Arrizo 6"><option value="Chery Celer"><option value="Chery Face"><option value="Chery QQ"><option value="Caoa Chery Tiggo 2"><option value="Caoa Chery Tiggo 3X"><option value="Caoa Chery Tiggo 5X"><option value="Caoa Chery Tiggo 7"><option value="Caoa Chery Tiggo 8">
+                <option value="BYD Dolphin"><option value="BYD Dolphin Mini"><option value="BYD Han"><option value="BYD King"><option value="BYD Seal"><option value="BYD Song Plus"><option value="BYD Tan"><option value="GWM Haval H6"><option value="GWM Ora 03"><option value="GWM Tank 300"><option value="JAC E-JS1"><option value="JAC J3"><option value="JAC T40"><option value="JAC T50"><option value="JAC T60">
+                <option value="BMW Série 1"><option value="BMW Série 3"><option value="BMW Série 5"><option value="BMW X1"><option value="BMW X3"><option value="BMW X5"><option value="Mercedes-Benz Classe A"><option value="Mercedes-Benz Classe C"><option value="Mercedes-Benz GLA"><option value="Mercedes-Benz GLC"><option value="Mercedes-Benz Sprinter"><option value="Audi A3"><option value="Audi A4"><option value="Audi Q3"><option value="Audi Q5"><option value="Volvo XC40"><option value="Volvo XC60"><option value="Volvo XC90"><option value="Land Rover Defender"><option value="Land Rover Discovery"><option value="Land Rover Range Rover Evoque"><option value="Porsche Cayenne"><option value="Porsche Macan"><option value="Tesla Model 3"><option value="Tesla Model Y">
+                <option value="Suzuki Jimny"><option value="Suzuki S-Cross"><option value="Suzuki Vitara"><option value="Subaru Forester"><option value="Subaru Impreza"><option value="Subaru XV"><option value="RAM 1500"><option value="RAM 2500"><option value="RAM Rampage"><option value="Iveco Daily"><option value="Mercedes-Benz Accelo"><option value="Mercedes-Benz Atego"><option value="Scania Caminhão"><option value="Volvo Caminhão"><option value="Van / Utilitário"><option value="Ônibus / Micro-ônibus">
+                <option value="Moto Honda Biz"><option value="Moto Honda Bros"><option value="Moto Honda CB"><option value="Moto Honda CG"><option value="Moto Honda Pop"><option value="Moto Honda XRE"><option value="Moto Yamaha Fazer"><option value="Moto Yamaha Factor"><option value="Moto Yamaha Lander"><option value="Moto Yamaha NMax"><option value="Moto Yamaha XTZ"><option value="Moto Suzuki"><option value="Moto Kawasaki"><option value="Moto BMW"><option value="Moto Harley-Davidson"><option value="Outro veículo">
+            </datalist>
+            <div class="form-text mb-2">Pesquise na lista ou digite livremente qualquer modelo.</div>
 
             <label class="small fw-bold">Cor:</label>
-            <select name="cor" class="form-select mb-3" required>
-                <option value="" disabled selected>Selecione a cor...</option>
-                <option value="Branco">Branco</option>
-                <option value="Preto">Preto</option>
-                <option value="Prata">Prata</option>
-                <option value="Cinza">Cinza</option>
-                <option value="Vermelho">Vermelho</option>
-                <option value="Azul">Azul</option>
-                <option value="Verde">Verde</option>
-                <option value="Amarelo">Amarelo</option>
-                <option value="Marrom">Marrom</option>
-                <option value="Bege">Bege</option>
-                <option value="Outra Cor">Outra Cor</option>
-            </select>
+            <input name="cor" list="listaCores" class="form-control mb-3" placeholder="Digite ou escolha a cor" autocomplete="off" required>
+            <datalist id="listaCores"><option value="Branco"><option value="Branco perolizado"><option value="Preto"><option value="Preto fosco"><option value="Prata"><option value="Cinza"><option value="Cinza grafite"><option value="Grafite"><option value="Chumbo"><option value="Vermelho"><option value="Vermelho vinho"><option value="Bordô"><option value="Azul"><option value="Azul marinho"><option value="Azul claro"><option value="Verde"><option value="Verde escuro"><option value="Amarelo"><option value="Laranja"><option value="Marrom"><option value="Bege"><option value="Dourado"><option value="Bronze"><option value="Roxo"><option value="Rosa"><option value="Creme"><option value="Cobre"><option value="Champanhe"><option value="Bicolor"><option value="Adesivado / Personalizado"><option value="Outra cor"></datalist>
 
             <label class="small fw-bold">Tipo de tarifa:</label>
             <select name="tipo_tarifa" id="tipoTarifa" class="form-select mb-2" onchange="atualizarTarifa()" required>
                 <option value="diaria" data-valor="{{ cfg.valor_diaria }}">Diária — R$ {{ "%.2f"|format(cfg.valor_diaria) }}</option>
                 <option value="van" data-valor="{{ cfg.valor_van }}">Van/Caminhonete — R$ {{ "%.2f"|format(cfg.valor_van) }}</option>
                 <option value="pernoite" data-valor="{{ cfg.valor_pernoite }}">Pernoite — R$ {{ "%.2f"|format(cfg.valor_pernoite) }}</option>
+                <option value="hora" data-valor="{{ cfg.valor_hora }}">Hora e fração — R$ {{ "%.2f"|format(cfg.valor_hora) }}</option>
+                <option value="mensalista" data-valor="0">Mensalista cadastrado</option>
             </select>
             <label class="small">Valor da tarifa (R$):</label>
             <input name="valor" id="valorTarifa" type="number" step="0.01" value="{{ cfg.valor_diaria }}" class="form-control mb-2" readonly>
@@ -375,6 +379,9 @@ HTML_DASHBOARD = """
         <div id="reader" style="width: 100%;"></div>
         
         <form action="/saida_scanner" method="POST" class="mt-3">
+            <select name="forma_pagamento" class="form-select mb-2" required><option value="Dinheiro">Dinheiro</option><option value="Pix">Pix</option><option value="Cartão de débito">Cartão de débito</option><option value="Cartão de crédito">Cartão de crédito</option></select>
+            <label class="form-check text-start mb-2"><input class="form-check-input" type="checkbox" name="talao_perdido" value="1"> Talão perdido</label>
+            {% if session.perfil == 'admin' %}<input name="desconto" type="number" step="0.01" min="0" class="form-control mb-2" placeholder="Desconto autorizado (R$)">{% endif %}
             <div class="input-group">
                 <input type="text" name="placa" id="placaScaneada" class="form-control text-uppercase" placeholder="Placa ou Código do QR" required>
                 <button class="btn btn-danger" type="submit">Dar Baixa</button>
@@ -401,12 +408,14 @@ HTML_DASHBOARD = """
         <h5>Veículos Ativos & Comprovantes QR</h5>
         {% for c in ativos %}
         <div class="border-bottom pb-2 mb-2">
+            {% if session.perfil == 'admin' %}
             <form action="/editar/{{ c.id }}" method="POST" class="d-flex gap-1 mb-1 align-items-center">
                 <input name="placa" value="{{ c.placa }}" class="form-control form-control-sm text-uppercase" required style="width: 85px;">
                 <input name="modelo" value="{{ c.modelo }}" class="form-control form-control-sm">
                 <button class="btn btn-warning btn-sm">Salvar</button>
                 <a href="/excluir/{{ c.id }}" class="btn btn-danger btn-sm">X</a>
             </form>
+            {% else %}<p class="mb-1"><strong>{{ c.placa }}</strong> — {{ c.modelo }}</p>{% endif %}
             <a href="/reimprimir/{{ c.id }}" class="btn btn-info btn-sm w-100 text-white fw-bold">🖨️ Ver / Imprimir Comprovante QR Code</a>
         </div>
         {% else %}<p class="text-muted">Pátio vazio.</p>{% endfor %}
@@ -427,7 +436,7 @@ HTML_DASHBOARD = """
     <!-- MODAL ESTATÍSTICAS -->
     <div class="modal fade" id="mEstatisticas" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-body text-center">
         <h5>Estatísticas do Estacionamento</h5>
-        <p class="mt-3">Total de Vagas: <strong>50</strong></p>
+        <p class="mt-3">Total de Vagas: <strong>{{ cfg.total_vagas }}</strong></p>
         <p>Talão Atual: <strong>Nº {{ talao_atual }}</strong></p>
         <p>Total de Veículos Ativos: <strong>{{ ativos|length }}</strong></p>
         <p>Total de Veículos Finalizados: <strong>{{ concluidos|length }}</strong></p>
@@ -457,12 +466,15 @@ HTML_DASHBOARD = """
                 <div class="col-4"><label class="small fw-bold">Van/Caminh.:</label><input name="valor_van" type="number" step="0.01" value="{{ cfg.valor_van }}" class="form-control mb-2" required></div>
                 <div class="col-4"><label class="small fw-bold">Pernoite (R$):</label><input name="valor_pernoite" type="number" step="0.01" value="{{ cfg.valor_pernoite }}" class="form-control mb-2" required></div>
             </div>
+            <div class="row"><div class="col-4"><label class="small fw-bold">1ª hora:</label><input name="valor_hora" type="number" step="0.01" value="{{ cfg.valor_hora }}" class="form-control mb-2"></div><div class="col-4"><label class="small fw-bold">Fração:</label><input name="valor_fracao" type="number" step="0.01" value="{{ cfg.valor_fracao }}" class="form-control mb-2"></div><div class="col-4"><label class="small fw-bold">Min. fração:</label><input name="minutos_fracao" type="number" value="{{ cfg.minutos_fracao }}" class="form-control mb-2"></div></div>
+            <div class="row"><div class="col-6"><label class="small fw-bold">Perda do talão:</label><input name="taxa_talao" type="number" step="0.01" value="{{ cfg.taxa_talao }}" class="form-control mb-2"></div><div class="col-6"><label class="small fw-bold">Total de vagas:</label><input name="total_vagas" type="number" value="{{ cfg.total_vagas }}" class="form-control mb-2"></div></div>
 
             <label class="small">Mensagem:</label><input name="mensagem" value="{{ cfg.mensagem }}" class="form-control mb-2">
             <label class="small fw-bold text-primary">Impressora Bluetooth Portátil:</label>
             <input name="imp" value="{{ cfg.impressora_status }}" class="form-control mb-3" placeholder="Ex: Thermer" required>
             <button class="btn btn-dark w-100 mb-2">Salvar Configurações</button>
         </form>
+        {% if session.perfil == 'admin' %}<a href="/funcionarios" class="btn btn-primary w-100 mb-2">👥 Gerenciar Funcionários</a>{% endif %}
         <a href="/dashboard" class="btn btn-secondary w-100">Fechar</a>
     </div></div></div></div>
 
@@ -483,6 +495,23 @@ HTML_DASHBOARD = """
     </div></div></div></div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+    window.addEventListener('load', function () {
+        if (!navigator.onLine) return location.replace('/offline');
+        fetch('/api/offline_snapshot').then(r => r.ok ? r.json() : null).then(d => {
+            if (!d) return;
+            localStorage.setItem('novapark_empresa_atual', d.empresa_chave);
+            const fila = JSON.parse(localStorage.getItem('novapark_fila_' + d.empresa_chave) || '[]');
+            if (fila.length) return location.replace('/offline');
+            if (!fila.length) {
+                localStorage.setItem('novapark_dados_' + d.empresa_chave, JSON.stringify(d.veiculos));
+                localStorage.setItem('novapark_config_' + d.empresa_chave, JSON.stringify(d.config));
+            }
+        }).catch(() => {});
+    });
+    window.addEventListener('offline', () => location.replace('/offline'));
+    </script>
 </body>
 </html>
 """
@@ -496,10 +525,14 @@ def fazer_login():
     email = request.form.get('email')
     senha = request.form.get('senha')
     conn = obter_conexao()
-    user = conn.execute("SELECT * FROM usuarios WHERE email = ? AND senha = ?", (email, senha)).fetchone()
+    user = conn.execute("SELECT * FROM usuarios WHERE email = ?", (email,)).fetchone()
     conn.close()
-    if user:
+    senha_ok = user and (check_password_hash(user['senha'], senha) if user['senha'].startswith(('pbkdf2:', 'scrypt:')) else user['senha'] == senha)
+    if senha_ok:
         session['email'] = email
+        session['usuario_id'] = user['id']
+        session['empresa_id'] = user['empresa_id']
+        session['perfil'] = user['perfil']
         return redirect(url_for('dashboard'))
     return f"Login incorreto. <a href='/'>Voltar</a>"
 
@@ -508,14 +541,25 @@ def cadastro():
     if request.method == 'POST':
         email = request.form.get('email')
         senha = request.form.get('senha')
+        empresa = request.form.get('empresa', '').strip()
+        nome_usuario = request.form.get('nome_usuario', '').strip()
         try:
             conn = obter_conexao()
-            conn.execute("INSERT INTO usuarios (email, senha) VALUES (?, ?)", (email, senha))
+            codigo = secrets.token_hex(5)
+            if conn.pg:
+                empresa_id = conn.execute("INSERT INTO empresas (nome,codigo) VALUES (?,?) RETURNING id", (empresa, codigo)).fetchone()['id']
+            else:
+                cur = conn.execute("INSERT INTO empresas (nome,codigo) VALUES (?,?)", (empresa, codigo)); empresa_id = cur.lastrowid
+            conn.execute("INSERT INTO usuarios (empresa_id,nome,email,senha,perfil) VALUES (?,?,?,?,?)", (empresa_id, nome_usuario, email.lower().strip(), generate_password_hash(senha), 'admin'))
+            conn.execute("""INSERT INTO configuracoes (empresa_id,nome,cnpj,endereco,telefone,horario,mensagem,impressora_status,valor_diaria,valor_van,valor_pernoite,logo)
+                          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""", (empresa_id, empresa, '', '', '', '07:00-22:00', 'Seja Bem-Vindo!', 'Thermer Bluetooth', 50, 30, 40, ''))
             conn.commit()
             conn.close()
             return redirect(url_for('login'))
-        except:
-            return "Email já cadastrado! <a href='/cadastro'>Tentar novamente</a>"
+        except Exception as e:
+            try: conn.rollback(); conn.close()
+            except: pass
+            return "Não foi possível cadastrar. Verifique se o e-mail já existe. <a href='/cadastro'>Tentar novamente</a>"
     return render_template_string(HTML_CADASTRO)
 
 @app.route('/dashboard')
@@ -540,7 +584,8 @@ def entrada():
         valores = {
             'diaria': float(cfg['valor_diaria']),
             'van': float(cfg['valor_van']),
-            'pernoite': float(cfg['valor_pernoite'])
+            'pernoite': float(cfg['valor_pernoite']),
+            'hora': float(cfg['valor_hora']), 'mensalista': 0.0
         }
         if tipo_tarifa not in valores:
             tipo_tarifa = 'diaria'
@@ -548,8 +593,11 @@ def entrada():
         hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         conn = obter_conexao()
+        mensalista = conn.execute("SELECT id FROM mensalistas WHERE empresa_id=? AND UPPER(placa)=? AND ativo=1", (session['empresa_id'], placa)).fetchone()
+        if mensalista:
+            tipo_tarifa, valor = 'mensalista', 0.0
         ja_ativo = conn.execute(
-            "SELECT id FROM veiculos WHERE placa=? AND status='ATIVO'", (placa,)
+            "SELECT id FROM veiculos WHERE empresa_id=? AND placa=? AND status='ATIVO'", (session['empresa_id'], placa)
         ).fetchone()
         if ja_ativo:
             conn.close()
@@ -557,17 +605,18 @@ def entrada():
 
         numero_talao = request.form.get('numero_talao', '').strip()
         talao_em_uso = conn.execute(
-            "SELECT 1 FROM veiculos WHERE numero_talao=?", (numero_talao,)
+            "SELECT 1 FROM veiculos WHERE empresa_id=? AND numero_talao=?", (session['empresa_id'], numero_talao)
         ).fetchone() if numero_talao else True
         if talao_em_uso:
             numero_talao = gerar_numero_talao(conn)
 
         conn.execute(
             """INSERT INTO veiculos
-               (placa, modelo, cor, valor, tipo_tarifa, numero_talao, hora_entrada)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (placa, modelo, cor, valor, tipo_tarifa, numero_talao, hora)
+               (empresa_id, placa, modelo, cor, valor, tipo_tarifa, numero_talao, hora_entrada, mensalista_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (session['empresa_id'], placa, modelo, cor, valor, tipo_tarifa, numero_talao, hora, mensalista['id'] if mensalista else None)
         )
+        registrar_auditoria(conn, 'ENTRADA', f'Placa {placa} - tarifa {tipo_tarifa}')
         conn.commit()
         conn.close()
         
@@ -584,14 +633,15 @@ def reimprimir(id):
     if 'email' not in session:
         return redirect(url_for('login'))
     conn = obter_conexao()
-    v = conn.execute("SELECT * FROM veiculos WHERE id=?", (id,)).fetchone()
-    cfg = conn.execute("SELECT * FROM configuracoes WHERE id=1").fetchone()
-    anuncios = conn.execute("SELECT * FROM anuncios").fetchall()
-    ativos = conn.execute("SELECT * FROM veiculos WHERE status='ATIVO' ORDER BY id DESC").fetchall()
-    concluidos = conn.execute("SELECT * FROM veiculos WHERE status='FINALIZADO' ORDER BY id DESC").fetchall()
+    eid = session['empresa_id']
+    v = conn.execute("SELECT * FROM veiculos WHERE id=? AND empresa_id=?", (id,eid)).fetchone()
+    cfg = conn.execute("SELECT * FROM configuracoes WHERE empresa_id=?", (eid,)).fetchone()
+    anuncios = conn.execute("SELECT * FROM anuncios WHERE empresa_id=?", (eid,)).fetchall()
+    ativos = conn.execute("SELECT * FROM veiculos WHERE empresa_id=? AND status='ATIVO' ORDER BY id DESC", (eid,)).fetchall()
+    concluidos = conn.execute("SELECT * FROM veiculos WHERE empresa_id=? AND status='FINALIZADO' ORDER BY id DESC", (eid,)).fetchall()
     talao_atual = v['numero_talao'] if v and v['numero_talao'] else gerar_numero_talao(conn)
     if v and not v['numero_talao']:
-        conn.execute("UPDATE veiculos SET numero_talao=? WHERE id=?", (talao_atual, id))
+        conn.execute("UPDATE veiculos SET numero_talao=? WHERE id=? AND empresa_id=?", (talao_atual, id, eid))
         conn.commit()
     conn.close()
 
@@ -616,7 +666,8 @@ def saida_scanner():
         placa = texto_scaneado.upper().strip()
 
     conn = obter_conexao()
-    v = conn.execute("SELECT * FROM veiculos WHERE placa=? AND status='ATIVO'", (placa,)).fetchone()
+    eid = session['empresa_id']
+    v = conn.execute("SELECT * FROM veiculos WHERE empresa_id=? AND placa=? AND status='ATIVO'", (eid, placa)).fetchone()
     
     if not v:
         conn.close()
@@ -627,51 +678,57 @@ def saida_scanner():
     saida = datetime.now()
     tempo_total = saida - entrada
     minutos = max(0, tempo_total.total_seconds() / 60)
-    valor_tarifa = float(v['valor'] if v['valor'] is not None else 0.0)
-    valor_final = 0.0 if minutos <= 15 else valor_tarifa
+    cfg = conn.execute("SELECT * FROM configuracoes WHERE empresa_id=?", (eid,)).fetchone()
+    forma_pagamento = request.form.get('forma_pagamento', 'Dinheiro')
+    talao_perdido = request.form.get('talao_perdido') == '1'
+    desconto = float(request.form.get('desconto', 0) or 0) if session.get('perfil') == 'admin' else 0.0
+    valor_final = calcular_cobranca(v, cfg, minutos, talao_perdido, desconto)
     hora_saida_str = saida.strftime(fmt)
     
-    conn.execute("UPDATE veiculos SET status='FINALIZADO', hora_saida=?, valor_total=? WHERE id=?", (hora_saida_str, valor_final, v['id']))
+    conn.execute("UPDATE veiculos SET status='FINALIZADO', hora_saida=?, valor_total=?, forma_pagamento=?, desconto=?, talao_perdido=? WHERE id=? AND empresa_id=?", (hora_saida_str, valor_final, forma_pagamento, desconto, 1 if talao_perdido else 0, v['id'], eid))
+    caixa = obter_caixa_aberto(conn)
+    if valor_final > 0:
+        conn.execute("INSERT INTO movimentos_caixa(empresa_id,caixa_id,usuario_id,veiculo_id,tipo,descricao,valor,forma_pagamento,criado_em) VALUES(?,?,?,?,?,?,?,?,?)", (eid, caixa['id'] if caixa else None, session.get('usuario_id'), v['id'], 'RECEITA', 'Saída '+v['placa'], valor_final, forma_pagamento, hora_saida_str))
+    registrar_auditoria(conn, 'SAIDA', f"Placa {v['placa']} - R$ {valor_final:.2f} - {forma_pagamento}")
     conn.commit()
     
-    cfg = conn.execute("SELECT * FROM configuracoes WHERE id=1").fetchone()
-    anuncios = conn.execute("SELECT * FROM anuncios").fetchall()
-    ativos = conn.execute("SELECT * FROM veiculos WHERE status='ATIVO' ORDER BY id DESC").fetchall()
-    concluidos = conn.execute("SELECT * FROM veiculos WHERE status='FINALIZADO' ORDER BY id DESC").fetchall()
+    anuncios = conn.execute("SELECT * FROM anuncios WHERE empresa_id=?", (eid,)).fetchall()
+    ativos = conn.execute("SELECT * FROM veiculos WHERE empresa_id=? AND status='ATIVO' ORDER BY id DESC", (eid,)).fetchall()
+    concluidos = conn.execute("SELECT * FROM veiculos WHERE empresa_id=? AND status='FINALIZADO' ORDER BY id DESC", (eid,)).fetchall()
     talao_atual = v['numero_talao'] or gerar_numero_talao(conn)
     
-    v_atualizado = conn.execute("SELECT * FROM veiculos WHERE id=:id", {"id": v['id']}).fetchone()
+    v_atualizado = conn.execute("SELECT * FROM veiculos WHERE id=? AND empresa_id=?", (v['id'], eid)).fetchone()
     conn.close()
     
     return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, saida_recente=v_atualizado, qr_entrada=None)
 
 @app.route('/editar/<int:id>', methods=['POST'])
 def editar(id):
-    if 'email' not in session:
+    if 'email' not in session or session.get('perfil') != 'admin':
         return redirect(url_for('login'))
     conn = obter_conexao()
-    conn.execute("UPDATE veiculos SET placa=?, modelo=? WHERE id=?", (request.form['placa'].upper().strip(), request.form['modelo'], id))
+    conn.execute("UPDATE veiculos SET placa=?, modelo=? WHERE id=? AND empresa_id=?", (request.form['placa'].upper().strip(), request.form['modelo'], id, session['empresa_id']))
     conn.commit()
     conn.close()
     return redirect(url_for('dashboard'))
 
 @app.route('/excluir/<int:id>')
 def excluir(id):
-    if 'email' not in session:
+    if 'email' not in session or session.get('perfil') != 'admin':
         return redirect(url_for('login'))
     conn = obter_conexao()
-    conn.execute("DELETE FROM veiculos WHERE id=?", (id,))
+    conn.execute("DELETE FROM veiculos WHERE id=? AND empresa_id=?", (id, session['empresa_id']))
     conn.commit()
     conn.close()
     return redirect(url_for('dashboard'))
 
 @app.route('/salvar_config', methods=['POST'])
 def salvar_config():
-    if 'email' not in session:
+    if 'email' not in session or session.get('perfil') != 'admin':
         return redirect(url_for('login'))
     try:
         conn = obter_conexao()
-        cfg_atual = conn.execute("SELECT logo FROM configuracoes WHERE id=1").fetchone()
+        cfg_atual = conn.execute("SELECT logo FROM configuracoes WHERE empresa_id=?", (session['empresa_id'],)).fetchone()
         logo = cfg_atual['logo'] if cfg_atual else ''
 
         if request.form.get('remover_logo') == '1':
@@ -690,7 +747,7 @@ def salvar_config():
             logo = f"data:{arquivo_logo.mimetype};base64,{base64.b64encode(dados_logo).decode('ascii')}"
 
         nome = request.form.get('nome', '').strip() or 'GLPPARK PRO'
-        conn.execute("UPDATE configuracoes SET nome=?, cnpj=?, endereco=?, telefone=?, horario=?, mensagem=?, impressora_status=?, valor_diaria=?, valor_van=?, valor_pernoite=?, logo=? WHERE id=1",
+        conn.execute("UPDATE configuracoes SET nome=?, cnpj=?, endereco=?, telefone=?, horario=?, mensagem=?, impressora_status=?, valor_diaria=?, valor_van=?, valor_pernoite=?, valor_hora=?, valor_fracao=?, minutos_fracao=?, taxa_talao=?, total_vagas=?, logo=? WHERE empresa_id=?",
                      (
                          nome,
                          request.form.get('cnpj', ''),
@@ -702,7 +759,9 @@ def salvar_config():
                          float(request.form.get('valor_diaria', 50.0)),
                          float(request.form.get('valor_van', 30.0)),
                          float(request.form.get('valor_pernoite', 40.0)),
-                         logo
+                         float(request.form.get('valor_hora', 10)), float(request.form.get('valor_fracao', 5)),
+                         max(1, int(request.form.get('minutos_fracao', 30))), float(request.form.get('taxa_talao', 30)),
+                         max(1, int(request.form.get('total_vagas', 50))), logo, session['empresa_id']
                      ))
         conn.commit()
         conn.close()
@@ -712,27 +771,187 @@ def salvar_config():
 
 @app.route('/add_anuncio', methods=['POST'])
 def add_anuncio():
-    if 'email' not in session:
+    if 'email' not in session or session.get('perfil') != 'admin':
         return redirect(url_for('login'))
     conn = obter_conexao()
-    conn.execute("INSERT INTO anuncios (texto) VALUES (?)", (request.form['texto'],))
+    conn.execute("INSERT INTO anuncios (empresa_id,texto) VALUES (?,?)", (session['empresa_id'], request.form['texto']))
     conn.commit()
     conn.close()
     return redirect(url_for('dashboard'))
 
 @app.route('/del_anuncio/<int:id>')
 def del_anuncio(id):
-    if 'email' not in session:
+    if 'email' not in session or session.get('perfil') != 'admin':
         return redirect(url_for('login'))
     conn = obter_conexao()
-    conn.execute("DELETE FROM anuncios WHERE id=?", (id,))
+    conn.execute("DELETE FROM anuncios WHERE id=? AND empresa_id=?", (id, session['empresa_id']))
     conn.commit()
     conn.close()
     return redirect(url_for('dashboard'))
 
+@app.route('/funcionarios', methods=['GET', 'POST'])
+def funcionarios():
+    if 'email' not in session or session.get('perfil') != 'admin':
+        return redirect(url_for('dashboard'))
+    conn = obter_conexao()
+    erro = ''
+    if request.method == 'POST':
+        try:
+            conn.execute("INSERT INTO usuarios (empresa_id,nome,email,senha,perfil) VALUES (?,?,?,?,?)", (session['empresa_id'], request.form.get('nome','').strip(), request.form.get('email','').lower().strip(), generate_password_hash(request.form.get('senha','')), 'funcionario'))
+            conn.commit()
+        except Exception:
+            conn.rollback(); erro = 'Não foi possível cadastrar. O e-mail pode já estar em uso.'
+    lista = conn.execute("SELECT id,nome,email,perfil FROM usuarios WHERE empresa_id=? ORDER BY nome", (session['empresa_id'],)).fetchall()
+    conn.close()
+    html = '''<!doctype html><html lang="pt-BR"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"></head><body class="bg-light"><div class="container py-3" style="max-width:650px"><div class="card p-3 shadow"><h3>Funcionários</h3>{% if erro %}<div class="alert alert-danger">{{ erro }}</div>{% endif %}<form method="post"><input name="nome" class="form-control mb-2" placeholder="Nome" required><input name="email" type="email" class="form-control mb-2" placeholder="E-mail" required><input name="senha" type="password" class="form-control mb-2" placeholder="Senha inicial" minlength="6" required><button class="btn btn-primary w-100">Cadastrar funcionário</button></form><hr>{% for u in lista %}<div class="border rounded p-2 mb-2"><b>{{u.nome}}</b><br><small>{{u.email}} — {{u.perfil}}</small>{% if u.perfil != 'admin' %}<a class="btn btn-sm btn-outline-danger float-end" href="/excluir_funcionario/{{u.id}}">Excluir</a>{% endif %}</div>{% endfor %}<a href="/dashboard" class="btn btn-secondary">Voltar</a></div></div></body></html>'''
+    return render_template_string(html, lista=lista, erro=erro)
+
+@app.route('/excluir_funcionario/<int:id>')
+def excluir_funcionario(id):
+    if 'email' in session and session.get('perfil') == 'admin':
+        conn = obter_conexao(); conn.execute("DELETE FROM usuarios WHERE id=? AND empresa_id=? AND perfil!='admin'", (id, session['empresa_id'])); conn.commit(); conn.close()
+    return redirect(url_for('funcionarios'))
+
+BASE_PRO = '''<!doctype html><html lang="pt-BR"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><title>{{titulo}}</title></head><body class="bg-light"><nav class="navbar navbar-dark bg-dark px-3"><span class="navbar-brand">NovaPark Pro — {{titulo}}</span><a href="/dashboard" class="btn btn-outline-light btn-sm">Painel</a></nav><main class="container py-3" style="max-width:900px">{{conteudo|safe}}</main></body></html>'''
+
+def somente_admin(): return 'email' in session and session.get('perfil') == 'admin'
+
+@app.route('/mensalistas', methods=['GET','POST'])
+def mensalistas():
+    if not somente_admin(): return redirect(url_for('dashboard'))
+    conn=obter_conexao(); eid=session['empresa_id']
+    if request.method=='POST':
+        conn.execute("INSERT INTO mensalistas(empresa_id,nome,documento,telefone,placa,modelo,valor_mensal,dia_vencimento,ativo) VALUES(?,?,?,?,?,?,?,?,1)",(eid,request.form['nome'],request.form.get('documento',''),request.form.get('telefone',''),request.form['placa'].upper().strip(),request.form.get('modelo',''),float(request.form.get('valor_mensal',0)),int(request.form.get('dia_vencimento',10))))
+        registrar_auditoria(conn,'CADASTRO_MENSALISTA',request.form['placa'].upper().strip());conn.commit()
+    lista=conn.execute("SELECT * FROM mensalistas WHERE empresa_id=? ORDER BY ativo DESC,nome",(eid,)).fetchall();conn.close()
+    linhas=''.join(f'''<tr><td>{m['nome']}</td><td>{m['placa']}</td><td>R$ {float(m['valor_mensal']):.2f}</td><td>Dia {m['dia_vencimento']}</td><td>{'Ativo' if m['ativo'] else 'Inativo'}</td><td><a class="btn btn-sm btn-outline-danger" href="/mensalista_status/{m['id']}">Ativar/Inativar</a></td></tr>''' for m in lista)
+    conteudo=f'''<div class="card p-3 shadow-sm mb-3"><h4>Novo mensalista</h4><form method="post"><div class="row g-2"><div class="col-md-6"><input class="form-control" name="nome" placeholder="Nome completo" required></div><div class="col-md-3"><input class="form-control" name="documento" placeholder="CPF/CNPJ"></div><div class="col-md-3"><input class="form-control" name="telefone" placeholder="Telefone"></div><div class="col-md-4"><input class="form-control text-uppercase" name="placa" placeholder="Placa" required></div><div class="col-md-4"><input class="form-control" name="modelo" placeholder="Modelo"></div><div class="col-md-2"><input class="form-control" type="number" step=".01" name="valor_mensal" placeholder="Valor"></div><div class="col-md-2"><input class="form-control" type="number" min="1" max="31" name="dia_vencimento" value="10"></div></div><button class="btn btn-success w-100 mt-2">Cadastrar</button></form></div><div class="card p-3"><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Nome</th><th>Placa</th><th>Mensalidade</th><th>Vencimento</th><th>Status</th><th>Ação</th></tr></thead><tbody>{linhas or '<tr><td colspan="6">Nenhum mensalista.</td></tr>'}</tbody></table></div></div>'''
+    return render_template_string(BASE_PRO,titulo='Mensalistas',conteudo=conteudo)
+
+@app.route('/mensalista_status/<int:id>')
+def mensalista_status(id):
+    if somente_admin():
+        conn=obter_conexao();conn.execute("UPDATE mensalistas SET ativo=CASE WHEN ativo=1 THEN 0 ELSE 1 END WHERE id=? AND empresa_id=?",(id,session['empresa_id']));registrar_auditoria(conn,'STATUS_MENSALISTA',str(id));conn.commit();conn.close()
+    return redirect(url_for('mensalistas'))
+
+@app.route('/financeiro', methods=['GET','POST'])
+def financeiro():
+    if not somente_admin(): return redirect(url_for('dashboard'))
+    conn=obter_conexao();eid=session['empresa_id'];caixa=obter_caixa_aberto(conn)
+    if request.method=='POST':
+        acao=request.form.get('acao');agora=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        if acao=='abrir' and not caixa:
+            conn.execute("INSERT INTO caixas(empresa_id,usuario_id,aberto_em,saldo_inicial,status) VALUES(?,?,?,?,?)",(eid,session['usuario_id'],agora,float(request.form.get('saldo_inicial',0)),'ABERTO'));registrar_auditoria(conn,'ABERTURA_CAIXA',request.form.get('saldo_inicial','0'))
+        elif acao in ('DESPESA','RETIRADA') and caixa:
+            conn.execute("INSERT INTO movimentos_caixa(empresa_id,caixa_id,usuario_id,tipo,descricao,valor,forma_pagamento,criado_em) VALUES(?,?,?,?,?,?,?,?)",(eid,caixa['id'],session['usuario_id'],acao,request.form.get('descricao',''),float(request.form.get('valor',0)),'Dinheiro',agora));registrar_auditoria(conn,acao,request.form.get('descricao',''))
+        elif acao=='fechar' and caixa:
+            movs=conn.execute("SELECT tipo,valor FROM movimentos_caixa WHERE caixa_id=?",(caixa['id'],)).fetchall();saldo=float(caixa['saldo_inicial'])+sum(float(x['valor']) if x['tipo']=='RECEITA' else -float(x['valor']) for x in movs);conn.execute("UPDATE caixas SET status='FECHADO',fechado_em=?,saldo_final=? WHERE id=? AND empresa_id=?",(agora,saldo,caixa['id'],eid));registrar_auditoria(conn,'FECHAMENTO_CAIXA',f'R$ {saldo:.2f}')
+        conn.commit();caixa=obter_caixa_aberto(conn)
+    movimentos=conn.execute("SELECT * FROM movimentos_caixa WHERE empresa_id=? ORDER BY id DESC LIMIT 100",(eid,)).fetchall();totais=conn.execute("SELECT forma_pagamento,SUM(valor) AS total FROM movimentos_caixa WHERE empresa_id=? AND tipo='RECEITA' GROUP BY forma_pagamento",(eid,)).fetchall();conn.close()
+    resumo=' '.join(f'<span class="badge bg-success me-1">{x["forma_pagamento"]}: R$ {float(x["total"]):.2f}</span>' for x in totais)
+    linhas=''.join(f'''<tr><td>{x['criado_em']}</td><td>{x['tipo']}</td><td>{x['descricao'] or ''}</td><td>{x['forma_pagamento'] or '-'}</td><td>R$ {float(x['valor']):.2f}</td></tr>''' for x in movimentos)
+    if caixa: topo=f'''<div class="alert alert-success">Caixa aberto desde {caixa['aberto_em']} — Inicial R$ {float(caixa['saldo_inicial']):.2f}</div><form method="post" class="row g-2 mb-3"><div class="col-md-3"><select class="form-select" name="acao"><option>DESPESA</option><option>RETIRADA</option></select></div><div class="col-md-4"><input class="form-control" name="descricao" placeholder="Descrição" required></div><div class="col-md-3"><input class="form-control" type="number" step=".01" name="valor" placeholder="Valor" required></div><div class="col-md-2"><button class="btn btn-warning w-100">Lançar</button></div></form><form method="post"><input type="hidden" name="acao" value="fechar"><button class="btn btn-danger w-100 mb-3">Fechar caixa</button></form>'''
+    else: topo='''<div class="alert alert-secondary">Nenhum caixa aberto.</div><form method="post" class="input-group mb-3"><input type="hidden" name="acao" value="abrir"><input class="form-control" type="number" step=".01" name="saldo_inicial" value="0"><button class="btn btn-success">Abrir caixa</button></form>'''
+    conteudo=topo+f'''<div class="mb-3">{resumo}</div><div class="card p-3"><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Data</th><th>Tipo</th><th>Descrição</th><th>Pagamento</th><th>Valor</th></tr></thead><tbody>{linhas or '<tr><td colspan="5">Sem movimentos.</td></tr>'}</tbody></table></div></div>'''
+    return render_template_string(BASE_PRO,titulo='Financeiro',conteudo=conteudo)
+
+@app.route('/relatorios')
+def relatorios():
+    if not somente_admin(): return redirect(url_for('dashboard'))
+    inicio=request.args.get('inicio',datetime.now().strftime('%Y-%m-01'));fim=request.args.get('fim',datetime.now().strftime('%Y-%m-%d'));conn=obter_conexao();eid=session['empresa_id'];regs=conn.execute("SELECT * FROM veiculos WHERE empresa_id=? AND substr(hora_entrada,1,10)>=? AND substr(hora_entrada,1,10)<=? ORDER BY id DESC",(eid,inicio,fim)).fetchall();aud=conn.execute("SELECT * FROM auditoria WHERE empresa_id=? ORDER BY id DESC LIMIT 50",(eid,)).fetchall();conn.close();receita=sum(float(x['valor_total'] or 0) for x in regs if x['status']=='FINALIZADO');cancelados=sum(1 for x in regs if x['cancelado']);linhas=''.join(f'''<tr><td>{x['placa']}</td><td>{x['hora_entrada']}</td><td>{x['hora_saida'] or '-'}</td><td>{x['forma_pagamento'] or '-'}</td><td>R$ {float(x['valor_total'] or 0):.2f}</td><td>{x['status']}</td><td>{f'<a href="/cancelar_registro/{x["id"]}" class="btn btn-sm btn-outline-danger">Cancelar</a>' if not x['cancelado'] else 'Cancelado'}</td></tr>''' for x in regs);logs=''.join(f'''<li class="list-group-item"><small>{x['criado_em']} — {x['acao']} — {x['detalhes'] or ''}</small></li>''' for x in aud)
+    conteudo=f'''<form class="row g-2 mb-3"><div class="col"><input class="form-control" type="date" name="inicio" value="{inicio}"></div><div class="col"><input class="form-control" type="date" name="fim" value="{fim}"></div><div class="col"><button class="btn btn-primary w-100">Filtrar</button></div></form><div class="row g-2 mb-3"><div class="col"><div class="card p-3"><b>Registros</b><span>{len(regs)}</span></div></div><div class="col"><div class="card p-3"><b>Receita</b><span>R$ {receita:.2f}</span></div></div><div class="col"><div class="card p-3"><b>Cancelados</b><span>{cancelados}</span></div></div></div><a class="btn btn-success mb-3" href="/exportar_csv?inicio={inicio}&fim={fim}">Exportar CSV</a><div class="card p-2 table-responsive"><table class="table table-sm"><thead><tr><th>Placa</th><th>Entrada</th><th>Saída</th><th>Pagamento</th><th>Total</th><th>Status</th><th>Ação</th></tr></thead><tbody>{linhas}</tbody></table></div><h5 class="mt-3">Auditoria</h5><ul class="list-group">{logs}</ul>'''
+    return render_template_string(BASE_PRO,titulo='Relatórios',conteudo=conteudo)
+
+@app.route('/cancelar_registro/<int:id>')
+def cancelar_registro(id):
+    if somente_admin():
+        conn=obter_conexao();v=conn.execute("SELECT * FROM veiculos WHERE id=? AND empresa_id=?",(id,session['empresa_id'])).fetchone()
+        if v and not v['cancelado']:
+            conn.execute("UPDATE veiculos SET cancelado=1,status='CANCELADO' WHERE id=? AND empresa_id=?",(id,session['empresa_id']));conn.execute("INSERT INTO movimentos_caixa(empresa_id,usuario_id,veiculo_id,tipo,descricao,valor,forma_pagamento,criado_em) VALUES(?,?,?,?,?,?,?,?)",(session['empresa_id'],session['usuario_id'],id,'ESTORNO','Cancelamento '+v['placa'],float(v['valor_total'] or 0),v['forma_pagamento'],datetime.now().strftime('%Y-%m-%d %H:%M:%S')));registrar_auditoria(conn,'CANCELAMENTO',f"Placa {v['placa']}");conn.commit()
+        conn.close()
+    return redirect(url_for('relatorios'))
+
+@app.route('/exportar_csv')
+def exportar_csv():
+    if not somente_admin(): return redirect(url_for('dashboard'))
+    inicio=request.args.get('inicio','0000-01-01');fim=request.args.get('fim','9999-12-31');conn=obter_conexao();regs=conn.execute("SELECT placa,modelo,cor,tipo_tarifa,hora_entrada,hora_saida,forma_pagamento,valor_total,status FROM veiculos WHERE empresa_id=? AND substr(hora_entrada,1,10)>=? AND substr(hora_entrada,1,10)<=? ORDER BY id",(session['empresa_id'],inicio,fim)).fetchall();conn.close();saida=io.StringIO();w=csv.writer(saida,delimiter=';');w.writerow(['Placa','Modelo','Cor','Tarifa','Entrada','Saída','Pagamento','Valor','Status']);[w.writerow([r[k] for k in ('placa','modelo','cor','tipo_tarifa','hora_entrada','hora_saida','forma_pagamento','valor_total','status')]) for r in regs];return app.response_class('\ufeff'+saida.getvalue(),mimetype='text/csv',headers={'Content-Disposition':'attachment; filename=relatorio_novapark.csv'})
+
+@app.route('/manifest.json')
+def manifest():
+    return app.response_class(json.dumps({
+        'name':'NovaPark Pro','short_name':'NovaPark','start_url':'/dashboard',
+        'display':'standalone','background_color':'#f4f5f7','theme_color':'#d35400'
+    }), mimetype='application/manifest+json')
+
+@app.route('/sw.js')
+def service_worker():
+    js = """
+const C='novapark-pwa-v3';
+self.addEventListener('install',e=>e.waitUntil(caches.open(C).then(c=>c.addAll(['/offline','/manifest.json'])).then(()=>self.skipWaiting())));
+self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
+self.addEventListener('fetch',e=>{if(e.request.method==='GET')e.respondWith(fetch(e.request).catch(()=>caches.match(e.request).then(r=>r||caches.match('/offline'))));});
+"""
+    return app.response_class(js, mimetype='application/javascript', headers={'Service-Worker-Allowed':'/'})
+
+HTML_OFFLINE = r'''<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NovaPark Offline</title><link rel="manifest" href="/manifest.json"><meta name="theme-color" content="#d35400"><style>
+*{box-sizing:border-box}body{margin:0;background:#f3f4f6;font:15px Arial;color:#222}.top{background:#d35400;color:#fff;padding:11px;text-align:center;font-weight:bold;position:sticky;top:0;z-index:2}.rede{padding:7px;text-align:center;background:#6c757d;color:white;font-size:12px}.wrap{max-width:720px;margin:auto;padding:12px}.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:12px}.btn{border:0;border-radius:7px;padding:12px 7px;color:#fff;font-weight:bold;background:#34495e}.green{background:#198754}.red{background:#dc3545}.orange{background:#e67e22}.card{display:none;background:white;border-radius:10px;padding:14px;margin-bottom:12px;box-shadow:0 2px 7px #0002}.card.on{display:block}label{display:block;margin-top:9px;font-weight:bold}input,select{width:100%;padding:11px;border:1px solid #ccc;border-radius:7px;margin-top:4px;font-size:16px}.full{width:100%;margin-top:11px}.item{border:1px solid #ddd;border-radius:7px;padding:10px;margin:8px 0}.muted{color:#666;font-size:12px}.logo{max-height:48px;max-width:140px;vertical-align:middle}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}@media print{body *{visibility:hidden}#recibo,#recibo *{visibility:visible}#recibo{display:block;position:absolute;left:0;top:0;width:100%;font-family:monospace;box-shadow:none}.no-print{display:none!important}}
+</style></head><body><div class="top"><img id="topLogo" class="logo" hidden> <span id="topNome">NovaPark Pro</span></div><div id="rede" class="rede">Modo offline</div><div class="wrap"><div class="tabs"><button class="btn green" onclick="aba('entrada')">ENTRADA</button><button class="btn red" onclick="aba('patio')">PÁTIO/SAÍDA</button><button id="configBtn" class="btn" onclick="aba('config')">CONFIG</button></div>
+<section id="entrada" class="card on"><h3>Entrada de veículo</h3><label>Placa</label><input id="placa" maxlength="8" autocomplete="off"><label>Modelo</label><input id="modelo"><label>Cor</label><input id="cor"><label>Forma de cobrança</label><select id="tipo"><option value="diaria">Diária</option><option value="van">Van/Caminhão</option><option value="pernoite">Pernoite</option><option value="hora">Hora e fração</option><option value="mensalista">Mensalista</option></select><button class="btn green full" onclick="registrarEntrada()">Registrar e imprimir</button></section>
+<section id="patio" class="card"><h3>Veículos no pátio</h3><div id="lista"></div></section>
+<section id="config" class="card"><h3>Configurações</h3><label>Nome</label><input id="cNome"><label>CNPJ</label><input id="cCnpj"><label>Endereço</label><input id="cEndereco"><label>Telefone</label><input id="cTelefone"><label>Horário</label><input id="cHorario"><div class="grid"><div><label>Diária</label><input id="cDiaria" type="number" step=".01"></div><div><label>Van/Caminhão</label><input id="cVan" type="number" step=".01"></div></div><label>Pernoite</label><input id="cPernoite" type="number" step=".01"><label>Mensagem</label><input id="cMensagem"><label>Impressora</label><input id="cImpressora"><label>Logo</label><input id="cLogo" type="file" accept="image/*"><button class="btn full" onclick="salvarConfig()">Salvar configurações</button></section>
+<section id="recibo" class="card"><div id="reciboTexto"></div><button class="btn full no-print" style="background:#111" onclick="print()">Imprimir comprovante</button><button class="btn full no-print" onclick="aba('patio')">Fechar</button></section></div><script>
+const empresa=localStorage.getItem('novapark_empresa_atual')||'sem_empresa',KD='novapark_dados_'+empresa,KF='novapark_fila_'+empresa,KC='novapark_config_'+empresa;let veiculos=JSON.parse(localStorage.getItem(KD)||'[]'),fila=JSON.parse(localStorage.getItem(KF)||'[]'),cfg=JSON.parse(localStorage.getItem(KC)||'{"nome":"NovaPark Pro","diaria":50,"van":30,"pernoite":40}');const $=id=>document.getElementById(id);function persistir(){localStorage.setItem(KD,JSON.stringify(veiculos));localStorage.setItem(KF,JSON.stringify(fila))}function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2)}function data(s){let d=new Date(s);return isNaN(d)?s:d.toLocaleString('pt-BR')}function moeda(n){return Number(n||0).toFixed(2).replace('.',',')}function aba(id){document.querySelectorAll('.card').forEach(x=>x.classList.remove('on'));$(id).classList.add('on');if(id==='patio')listar()}
+function aplicar(){['Nome','Cnpj','Endereco','Telefone','Horario','Mensagem','Impressora'].forEach(x=>$('c'+x).value=cfg[x.toLowerCase()]||'');$('cDiaria').value=cfg.diaria||0;$('cVan').value=cfg.van||0;$('cPernoite').value=cfg.pernoite||0;$('topNome').textContent=cfg.nome||'NovaPark Pro';if(cfg.logo){$('topLogo').src=cfg.logo;$('topLogo').hidden=false}if(cfg.perfil!=='admin'){$('configBtn').remove();$('config').remove();document.querySelector('.tabs').style.gridTemplateColumns='1fr 1fr'}}
+function registrarEntrada(){let p=$('placa').value.trim().toUpperCase();if(!p)return alert('Digite a placa.');if(veiculos.some(v=>v.placa===p&&v.status==='ATIVO'))return alert('Essa placa já está no pátio.');let t=(cfg.placas_mensalistas||[]).includes(p)?'mensalista':$('tipo').value,v={offline_id:uid(),placa:p,modelo:$('modelo').value.trim(),cor:$('cor').value.trim(),tipo_tarifa:t,valor:t==='mensalista'?0:Number(cfg[t]||0),numero_talao:String(Math.floor(10000+Math.random()*90000)),hora_entrada:new Date().toISOString(),status:'ATIVO'};veiculos.push(v);fila.push({acao:'entrada',dados:v});persistir();comprovante(v,'ENTRADA');$('placa').value=$('modelo').value=$('cor').value=''}
+function listar(){let a=veiculos.filter(v=>v.status==='ATIVO');$('lista').innerHTML=a.length?a.map(v=>`<div class="item"><b>${v.placa}</b> — ${v.modelo||'Modelo não informado'}<div class="muted">Entrada: ${data(v.hora_entrada)} | Talão: ${v.numero_talao||'-'}</div><button class="btn red full" onclick="darSaida('${v.offline_id}')">Dar saída</button><button class="btn orange full" onclick="comprovantePorId('${v.offline_id}')">Reimprimir</button></div>`).join(''):'<p class="muted">Nenhum veículo no pátio.</p>'}
+function darSaida(id){let v=veiculos.find(x=>x.offline_id===id);if(!v)return;let agora=new Date(),mins=(agora-new Date(v.hora_entrada))/60000,bruto=0;if(mins>15&&v.tipo_tarifa!=='mensalista'){if(v.tipo_tarifa==='hora'){bruto=Number(cfg.hora||10);if(mins>60)bruto+=Math.ceil((mins-60)/Number(cfg.minutos_fracao||30))*Number(cfg.fracao||5)}else bruto=Number(v.valor)}let perdido=confirm('O talão foi perdido?');if(perdido)bruto+=Number(cfg.taxa_talao||0);let desconto=cfg.perfil==='admin'?Number(prompt('Desconto autorizado em R$ (0 para nenhum):','0')||0):0,pagamento=prompt('Pagamento: Dinheiro, Pix, Cartão de débito ou Cartão de crédito','Dinheiro')||'Dinheiro';v.hora_saida=agora.toISOString();v.valor_total=Math.max(0,bruto-desconto);v.forma_pagamento=pagamento;v.desconto=desconto;v.talao_perdido=perdido?1:0;v.status='FINALIZADO';fila.push({acao:'saida',dados:{offline_id:id,hora_saida:v.hora_saida,valor_total:v.valor_total,forma_pagamento:pagamento,desconto:desconto,talao_perdido:v.talao_perdido}});persistir();comprovante(v,'SAÍDA')}
+function comprovantePorId(id){let v=veiculos.find(x=>x.offline_id===id);if(v)comprovante(v,v.status==='ATIVO'?'ENTRADA':'SAÍDA')}function comprovante(v,t){$('reciboTexto').innerHTML=`<div style="text-align:center">${cfg.logo?`<img class="logo" src="${cfg.logo}"><br>`:''}<b>${cfg.nome||'NovaPark Pro'}</b><br><small>${cfg.cnpj||''}<br>${cfg.endereco||''}<br>${cfg.telefone||''}</small></div><hr><b>COMPROVANTE DE ${t}</b><p>Placa: <b>${v.placa}</b><br>Modelo: ${v.modelo||'-'}<br>Cor: ${v.cor||'-'}<br>Talão: ${v.numero_talao||'-'}<br>Entrada: ${data(v.hora_entrada)}${t==='SAÍDA'?`<br>Saída: ${data(v.hora_saida)}<br><b>Total: R$ ${moeda(v.valor_total)}</b>`:''}</p><hr><div style="text-align:center">${cfg.mensagem||''}</div>`;aba('recibo');setTimeout(()=>print(),300)}
+function salvarConfig(){if(cfg.perfil!=='admin')return;let n={perfil:'admin',nome:$('cNome').value.trim()||'NovaPark Pro',cnpj:$('cCnpj').value,endereco:$('cEndereco').value,telefone:$('cTelefone').value,horario:$('cHorario').value,diaria:Number($('cDiaria').value),van:Number($('cVan').value),pernoite:Number($('cPernoite').value),mensagem:$('cMensagem').value,impressora:$('cImpressora').value,logo:cfg.logo||''},f=$('cLogo').files[0],fim=()=>{cfg=n;localStorage.setItem(KC,JSON.stringify(cfg));fila.push({acao:'config',dados:cfg});persistir();aplicar();alert('Configurações salvas no celular.')};if(f){if(f.size>2097152)return alert('A logo deve ter no máximo 2 MB.');let r=new FileReader();r.onload=()=>{n.logo=r.result;fim()};r.readAsDataURL(f)}else fim()}
+async function sincronizar(){if(!navigator.onLine||!fila.length)return;try{let r=await fetch('/api/sincronizar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({empresa_chave:empresa,operacoes:fila})});if(r.ok){fila=[];persistir();$('rede').textContent='Sincronização concluída';setTimeout(()=>location.href='/dashboard',1000)}else $('rede').textContent='Entre novamente para sincronizar'}catch(e){$('rede').textContent='Sem internet — dados seguros no celular'}}function rede(){$('rede').textContent=navigator.onLine?'Online — sincronizando...':'Modo offline — dados seguros no celular';if(navigator.onLine)sincronizar()}window.addEventListener('online',rede);window.addEventListener('offline',rede);aplicar();listar();rede();if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js');
+</script></body></html>'''
+
+@app.route('/offline')
+def offline(): return HTML_OFFLINE
+
+def iso_para_banco(valor):
+    try: return datetime.fromisoformat(valor.replace('Z','+00:00')).replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
+    except Exception: return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+@app.route('/api/offline_snapshot')
+def offline_snapshot():
+    if 'empresa_id' not in session: return {'ok':False}, 401
+    eid=session['empresa_id']; conn=obter_conexao()
+    emp=conn.execute('SELECT codigo FROM empresas WHERE id=?',(eid,)).fetchone(); cfg=conn.execute('SELECT * FROM configuracoes WHERE empresa_id=?',(eid,)).fetchone(); ativos=conn.execute("SELECT * FROM veiculos WHERE empresa_id=? AND status='ATIVO' ORDER BY id DESC",(eid,)).fetchall(); mensais=conn.execute("SELECT placa FROM mensalistas WHERE empresa_id=? AND ativo=1",(eid,)).fetchall()
+    vs=[{'offline_id':v['offline_id'] or 'servidor-'+str(v['id']),'placa':v['placa'],'modelo':v['modelo'] or '','cor':v['cor'] or '','valor':v['valor'] or 0,'tipo_tarifa':v['tipo_tarifa'] or 'diaria','numero_talao':v['numero_talao'] or '','hora_entrada':v['hora_entrada'],'status':'ATIVO'} for v in ativos]
+    conf={'perfil':session.get('perfil','funcionario'),'nome':cfg['nome'],'cnpj':cfg['cnpj'] or '','endereco':cfg['endereco'] or '','telefone':cfg['telefone'] or '','horario':cfg['horario'] or '','mensagem':cfg['mensagem'] or '','impressora':cfg['impressora_status'] or '','diaria':cfg['valor_diaria'],'van':cfg['valor_van'],'pernoite':cfg['valor_pernoite'],'hora':cfg['valor_hora'],'fracao':cfg['valor_fracao'],'minutos_fracao':cfg['minutos_fracao'],'taxa_talao':cfg['taxa_talao'],'placas_mensalistas':[m['placa'].upper() for m in mensais],'logo':cfg['logo'] or ''}
+    conn.close(); return {'empresa_chave':emp['codigo'],'veiculos':vs,'config':conf}
+
+@app.route('/api/sincronizar',methods=['POST'])
+def sincronizar_offline():
+    if 'empresa_id' not in session:return {'ok':False,'erro':'login'},401
+    corpo=request.get_json(silent=True) or {}; eid=session['empresa_id']; conn=obter_conexao(); emp=conn.execute('SELECT codigo FROM empresas WHERE id=?',(eid,)).fetchone()
+    if not emp or corpo.get('empresa_chave')!=emp['codigo']:conn.close();return {'ok':False,'erro':'empresa'},403
+    try:
+        for op in corpo.get('operacoes',[]):
+            a,d=op.get('acao'),op.get('dados',{})
+            if a=='entrada' and d.get('offline_id'):
+                conn.execute('''INSERT INTO veiculos(empresa_id,offline_id,placa,modelo,cor,valor,tipo_tarifa,numero_talao,hora_entrada,status) SELECT ?,?,?,?,?,?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM veiculos WHERE empresa_id=? AND offline_id=?)''',(eid,d['offline_id'],d.get('placa','').upper(),d.get('modelo',''),d.get('cor',''),float(d.get('valor',0)),d.get('tipo_tarifa','diaria'),d.get('numero_talao',''),iso_para_banco(d.get('hora_entrada','')),'ATIVO',eid,d['offline_id']))
+            elif a=='saida' and d.get('offline_id'):
+                oid=d['offline_id']; hs=iso_para_banco(d.get('hora_saida','')); total=float(d.get('valor_total',0));pag=d.get('forma_pagamento','Dinheiro');desc=float(d.get('desconto',0));perdido=int(d.get('talao_perdido',0));vid=None
+                if oid.startswith('servidor-') and oid[9:].isdigit():vid=int(oid[9:]);conn.execute("UPDATE veiculos SET status='FINALIZADO',hora_saida=?,valor_total=?,forma_pagamento=?,desconto=?,talao_perdido=? WHERE id=? AND empresa_id=?",(hs,total,pag,desc,perdido,vid,eid))
+                else:
+                    row=conn.execute("SELECT id FROM veiculos WHERE offline_id=? AND empresa_id=?",(oid,eid)).fetchone();vid=row['id'] if row else None;conn.execute("UPDATE veiculos SET status='FINALIZADO',hora_saida=?,valor_total=?,forma_pagamento=?,desconto=?,talao_perdido=? WHERE offline_id=? AND empresa_id=?",(hs,total,pag,desc,perdido,oid,eid))
+                if vid and total>0 and not conn.execute("SELECT 1 FROM movimentos_caixa WHERE empresa_id=? AND veiculo_id=? AND tipo='RECEITA'",(eid,vid)).fetchone():
+                    caixa=obter_caixa_aberto(conn);conn.execute("INSERT INTO movimentos_caixa(empresa_id,caixa_id,usuario_id,veiculo_id,tipo,descricao,valor,forma_pagamento,criado_em) VALUES(?,?,?,?,?,?,?,?,?)",(eid,caixa['id'] if caixa else None,session.get('usuario_id'),vid,'RECEITA','Saída offline',total,pag,hs))
+            elif a=='config' and session.get('perfil')=='admin':
+                conn.execute('''UPDATE configuracoes SET nome=?,cnpj=?,endereco=?,telefone=?,horario=?,mensagem=?,impressora_status=?,valor_diaria=?,valor_van=?,valor_pernoite=?,logo=? WHERE empresa_id=?''',(d.get('nome','NovaPark Pro'),d.get('cnpj',''),d.get('endereco',''),d.get('telefone',''),d.get('horario',''),d.get('mensagem',''),d.get('impressora',''),float(d.get('diaria',50)),float(d.get('van',30)),float(d.get('pernoite',40)),d.get('logo',''),eid))
+        conn.commit()
+    except Exception as e:conn.rollback();conn.close();return {'ok':False,'erro':str(e)},400
+    conn.close();return {'ok':True,'sincronizadas':len(corpo.get('operacoes',[]))}
+
 @app.route('/logout')
 def logout():
-    session.pop('email', None)
+    session.clear()
     return redirect(url_for('login'))
 
 inicializar_banco()
