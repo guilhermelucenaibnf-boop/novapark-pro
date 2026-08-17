@@ -530,7 +530,7 @@ HTML_DASHBOARD = """
                 console.log("Câmera indisponível.");
             }
         </script>
-        <a href="/dashboard" class="btn btn-secondary w-100 mt-3">Fechar</a>
+        <button type="button" class="btn btn-secondary w-100 mt-3" data-bs-dismiss="modal">Fechar</button>
     </div></div></div></div>
 
     <!-- MODAL PÁTIO -->
@@ -549,7 +549,7 @@ HTML_DASHBOARD = """
             <a href="/reimprimir/{{ c.id }}" class="btn btn-info btn-sm w-100 text-white fw-bold">🖨️ Ver / Imprimir Comprovante QR Code</a>
         </div>
         {% else %}<p class="text-muted">Pátio vazio.</p>{% endfor %}
-        <a href="/dashboard" class="btn btn-secondary w-100 mt-3">Fechar</a>
+        <button type="button" class="btn btn-secondary w-100 mt-3" data-bs-dismiss="modal">Fechar</button>
     </div></div></div></div>
 
     <!-- MODAL CAIXA -->
@@ -560,7 +560,7 @@ HTML_DASHBOARD = """
             <tr><td>{{ c.placa }}</td><td>{{ c.hora_entrada }}</td><td>{{ c.hora_saida }}</td><td>R$ {{ "%.2f"|format(c.valor_total if c.valor_total else c.valor) }}</td></tr>
             {% else %}<tr><td colspan="4" class="text-center text-muted">Nenhum registro no caixa.</td></tr>{% endfor %}
         </tbody></table>
-        <a href="/dashboard" class="btn btn-secondary w-100 mt-3">Fechar</a>
+        <button type="button" class="btn btn-secondary w-100 mt-3" data-bs-dismiss="modal">Fechar</button>
     </div></div></div></div>
 
     <!-- MODAL ESTATÍSTICAS -->
@@ -570,7 +570,7 @@ HTML_DASHBOARD = """
         <p>Talão Atual: <strong>Nº {{ talao_atual }}</strong></p>
         <p>Total de Veículos Ativos: <strong>{{ ativos|length }}</strong></p>
         <p>Total de Veículos Finalizados: <strong>{{ concluidos|length }}</strong></p>
-        <a href="/dashboard" class="btn btn-secondary w-100 mt-3">Fechar</a>
+        <button type="button" class="btn btn-secondary w-100 mt-3" data-bs-dismiss="modal">Fechar</button>
     </div></div></div></div>
 
     <!-- MODAL CONFIG -->
@@ -605,7 +605,7 @@ HTML_DASHBOARD = """
             <button class="btn btn-dark w-100 mb-2">Salvar Configurações</button>
         </form>
         {% if session.perfil == 'admin' %}<a href="/funcionarios" class="btn btn-primary w-100 mb-2">👥 Gerenciar Funcionários</a>{% endif %}
-        <a href="/dashboard" class="btn btn-secondary w-100">Fechar</a>
+        <button type="button" class="btn btn-secondary w-100" data-bs-dismiss="modal">Fechar</button>
     </div></div></div></div>
 
     <!-- MODAL ANÚNCIOS -->
@@ -621,7 +621,7 @@ HTML_DASHBOARD = """
             <a href="/del_anuncio/{{ a.id }}" class="btn btn-danger btn-sm px-3">Excluir</a>
         </div>
         {% else %}<p class="text-muted small">Nenhum anúncio cadastrado.</p>{% endfor %}
-        <a href="/dashboard" class="btn btn-secondary w-100 mt-3">Fechar</a>
+        <button type="button" class="btn btn-secondary w-100 mt-3" data-bs-dismiss="modal">Fechar</button>
     </div></div></div></div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
