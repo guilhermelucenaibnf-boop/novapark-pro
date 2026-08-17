@@ -652,54 +652,7 @@ def gestao_glppark():
         erro = 'Senha de gestão incorreta.'
 
     if not session.get('gestor_glppark'):
-        html = """<!doctype html><html lang="pt-BR"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><title>Gestão GLPPARK</title></head><body class="bg-light d-flex align-items-center justify-content-center vh-100"><div class="card shadow p-4" style="width:100%;max-width:420px"><h3 class="text-center mb-3">🔐 Gestão GLPPARK</h3>{% if erro %}<div class="alert alert-danger">{{ erro }}</div>{% endif %}<form method="post"><input type="hidden" name="acao" value="login"><label class="form-label">Senha mestra</label><input class="form-control mb-3" type="password" name="senha" required><button class="btn btn-dark w-100">Entrar</button></form><a class="btn btn-link mt-2" href="/">Voltar ao login</a></div><script>
-    const PRECOS_PLANOS = {
-      Basico: 49.90,
-      Pro: 89.90,
-      Premium: 149.90
-    };
-
-    function valorPlano(nome) {
-      return Object.prototype.hasOwnProperty.call(PRECOS_PLANOS, nome)
-        ? PRECOS_PLANOS[nome].toFixed(2)
-        : '';
-    }
-
-    function preencherPlanoNovo() {
-      const plano = document.getElementById('novoPlano');
-      const valor = document.getElementById('novoValor');
-      if (!plano || !valor) return;
-      const novoValor = valorPlano(plano.value);
-      if (novoValor !== '') valor.value = novoValor;
-    }
-
-    function preencherPlanoExistente(select) {
-      const form = select.closest('form');
-      if (!form) return;
-      const input = form.querySelector('.valor-input');
-      if (!input) return;
-      const novoValor = valorPlano(select.value);
-      if (novoValor !== '') input.value = novoValor;
-    }
-
-    document.addEventListener('DOMContentLoaded', function () {
-      const novoPlano = document.getElementById('novoPlano');
-      if (novoPlano) {
-        novoPlano.addEventListener('change', preencherPlanoNovo);
-        novoPlano.addEventListener('input', preencherPlanoNovo);
-        preencherPlanoNovo();
-      }
-
-      document.querySelectorAll('.plano-select-nao-usado').forEach(function (select) {
-        select.addEventListener('change', function () {
-          preencherPlanoExistente(select);
-        });
-        select.addEventListener('input', function () {
-          preencherPlanoExistente(select);
-        });
-      });
-    });
-    </script></body></html>"""
+        html = """<!doctype html><html lang="pt-BR"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><title>Gestão GLPPARK</title></head><body class="bg-light d-flex align-items-center justify-content-center vh-100"><div class="card shadow p-4" style="width:100%;max-width:420px"><h3 class="text-center mb-3">🔐 Gestão GLPPARK</h3>{% if erro %}<div class="alert alert-danger">{{ erro }}</div>{% endif %}<form method="post"><input type="hidden" name="acao" value="login"><label class="form-label">Senha mestra</label><input class="form-control mb-3" type="password" name="senha" required><button class="btn btn-dark w-100">Entrar</button></form><a class="btn btn-link mt-2" href="/">Voltar ao login</a></div></body></html>"""
         return render_template_string(html, erro=erro)
 
     if request.method == 'POST' and request.form.get('acao') == 'criar_empresa':
@@ -800,7 +753,34 @@ def gestao_glppark():
 </form>
 </div>
 <form method="post" class="mb-2"><input type="hidden" name="acao" value="atualizar_empresa"><input type="hidden" name="empresa_id" value="{{e.id}}"><input type="hidden" name="plano" value="{{e.plano or 'Basico'}}"><div class="row g-2"><div class="col-12 col-sm-6"><label class="form-label">Valor mensal personalizado</label><input name="valor_mensal" type="number" step=".01" min="0" value="{{e.valor_mensal or 0}}" class="form-control"></div><div class="col-12 col-sm-6"><label class="form-label">Vencimento</label><input name="vencimento" type="date" value="{{e.vencimento or ''}}" class="form-control"></div></div><button class="btn btn-primary w-100 mt-2">Salvar valor e vencimento</button></form>
-    {% if e.id==principal_id %}<div class="alert alert-secondary py-2 mb-0 text-center">Empresa principal protegida contra suspensão.</div>{% elif st=='SUSPENSA' %}<form method="post"><input type="hidden" name="acao" value="reativar_empresa"><input type="hidden" name="empresa_id" value="{{e.id}}"><button class="btn btn-success w-100">Reativar empresa</button></form>{% else %}<form method="post"><input type="hidden" name="acao" value="suspender_empresa"><input type="hidden" name="empresa_id" value="{{e.id}}"><button class="btn btn-outline-danger w-100">Suspender empresa</button></form>{% endif %}</div></div>{% else %}<div class="alert alert-secondary">Nenhuma empresa cadastrada.</div>{% endfor %}</div></div></body></html>"""
+    {% if e.id==principal_id %}<div class="alert alert-secondary py-2 mb-0 text-center">Empresa principal protegida contra suspensão.</div>{% elif st=='SUSPENSA' %}<form method="post"><input type="hidden" name="acao" value="reativar_empresa"><input type="hidden" name="empresa_id" value="{{e.id}}"><button class="btn btn-success w-100">Reativar empresa</button></form>{% else %}<form method="post"><input type="hidden" name="acao" value="suspender_empresa"><input type="hidden" name="empresa_id" value="{{e.id}}"><button class="btn btn-outline-danger w-100">Suspender empresa</button></form>{% endif %}</div></div>{% else %}<div class="alert alert-secondary">Nenhuma empresa cadastrada.</div>{% endfor %}</div></div>
+<script>
+const PRECOS_NOVA_EMPRESA = {
+  Basico: 49.90,
+  Pro: 89.90,
+  Premium: 149.90
+};
+
+function atualizarPrecoNovaEmpresa() {
+  const plano = document.getElementById('novoPlano');
+  const valor = document.getElementById('novoValor');
+  if (!plano || !valor) return;
+  const preco = PRECOS_NOVA_EMPRESA[plano.value];
+  if (preco !== undefined) {
+    valor.value = preco.toFixed(2);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const plano = document.getElementById('novoPlano');
+  if (plano) {
+    plano.addEventListener('change', atualizarPrecoNovaEmpresa);
+    plano.addEventListener('input', atualizarPrecoNovaEmpresa);
+    atualizarPrecoNovaEmpresa();
+  }
+});
+</script>
+</body></html>"""
     return render_template_string(html, empresas=empresas, erro=erro, sucesso=sucesso, status_empresa=status_empresa, principal_id=principal_id)
 
 @app.route('/gestao-glppark/sair')
