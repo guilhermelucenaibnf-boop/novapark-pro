@@ -114,7 +114,10 @@ def inicializar_banco():
             conn.execute(f'UPDATE {tabela} SET empresa_id=? WHERE empresa_id IS NULL', (empresa_legada,))
         conn.execute("UPDATE usuarios SET perfil='admin' WHERE empresa_id=?", (empresa_legada,))
     # Remove somente o nome antigo usado no protótipo; os demais nomes são preservados.
-    conn.execute("UPDATE configuracoes SET nome='GLPPARK' WHERE LOWER(COALESCE(nome,'')) LIKE '%manfrenate%'")
+    conn.execute(
+        "UPDATE configuracoes SET nome='GLPPARK' WHERE LOWER(COALESCE(nome,'')) LIKE ?",
+        ('%manfrenate%',)
+    )
     conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_offline_empresa ON veiculos(empresa_id, offline_id)')
     conn.commit()
     conn.close()
