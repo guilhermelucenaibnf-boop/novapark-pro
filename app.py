@@ -151,10 +151,33 @@ def obter_caixa_aberto(conn):
     return conn.execute("SELECT * FROM caixas WHERE empresa_id=? AND status='ABERTO' ORDER BY id DESC LIMIT 1", (session['empresa_id'],)).fetchone()
 
 PLANOS_GLPPARK = {
-    'Basico': {'limite_funcionarios': 3, 'valor_sugerido': 49.90},
-    'Pro': {'limite_funcionarios': 10, 'valor_sugerido': 89.90},
-    'Premium': {'limite_funcionarios': 999, 'valor_sugerido': 149.90},
+    'Basico': {
+        'limite_funcionarios': 3,
+        'valor_sugerido': 49.90,
+        'recursos': {'entrada','saida','patio','config','caixa'}
+    },
+    'Pro': {
+        'limite_funcionarios': 10,
+        'valor_sugerido': 89.90,
+        'recursos': {'entrada','saida','patio','config','caixa','estatisticas','mensalistas','relatorios'}
+    },
+    'Premium': {
+        'limite_funcionarios': 999,
+        'valor_sugerido': 149.90,
+        'recursos': {'entrada','saida','patio','config','caixa','estatisticas','mensalistas','relatorios','financeiro','anuncios'}
+    },
 }
+
+def recurso_liberado(recurso, plano=None):
+    plano = plano or session.get('plano', 'Basico')
+    dados = PLANOS_GLPPARK.get(plano, PLANOS_GLPPARK['Basico'])
+    return recurso in dados['recursos']
+
+def exigir_recurso(recurso):
+    if not recurso_liberado(recurso):
+        plano = session.get('plano', 'Basico')
+        return f"<h3>Recurso não disponível no plano {plano}.</h3><p>Altere o plano na Gestão GLPPARK para liberar esta função.</p><a href='/dashboard'>Voltar</a>", 403
+    return None
 
 def status_empresa(emp):
     """Retorna ATIVA, TESTE, VENCIDA ou SUSPENSA sem apagar dados da empresa."""
@@ -282,6 +305,12 @@ HTML_DASHBOARD = """
         <span id="relogioGlppark" style="white-space:nowrap; flex-shrink:0; font-variant-numeric:tabular-nums;">🕐 --:--</span>
     </div>
     <div class="container mt-3">
+        <div class="alert alert-light border py-2 px-3 mb-2 d-flex justify-content-between align-items-center flex-wrap gap-1" style="font-size:12px;">
+            <span><strong>Plano:</strong> {{ session.plano|default('Basico') }}</span>
+            <span><strong>Status:</strong> {{ session.status_assinatura|default('ATIVA') }}</span>
+            {% if empresa_vencimento %}<span><strong>Vencimento:</strong> {{ empresa_vencimento }}</span>{% endif %}
+        </div>
+        {% if aviso_vencimento %}<div class="alert alert-warning py-2 small">{{ aviso_vencimento }}</div>{% endif %}
         <div class="row mb-2">
             <div class="col-6"><div class="card text-center p-2 fw-bold text-secondary bg-white border" style="font-size: 12px;">Livres: <span class="text-dark">{{ [cfg.total_vagas - (ativos|length), 0]|max }}</span>/{{ cfg.total_vagas }} | Talão: <span class="text-danger">Nº {{ talao_atual }}</span></div></div>
             <div class="col-6"><div class="card text-center p-2 fw-bold text-white bg-dark" style="font-size: 12px;">Ativos: {{ ativos|length }} | Saídas: {{ concluidos|length }}</div></div>
@@ -291,13 +320,13 @@ HTML_DASHBOARD = """
             <div class="col-6"><button class="btn-grid bg-danger" data-bs-toggle="modal" data-bs-target="#mSaida">📤 SAÍDA & SCANNER</button></div>
             <div class="col-6"><button class="btn-grid bg-secondary" data-bs-toggle="modal" data-bs-target="#mPatio">🅿️ PÁTIO</button></div>
             {% if session.perfil == 'admin' %}
-            <div class="col-6"><button class="btn-grid" style="background-color: #34495e;" data-bs-toggle="modal" data-bs-target="#mConfig">⚙️ CONFIG</button></div>
-            <div class="col-6"><button class="btn-grid" style="background-color: #e67e22;" data-bs-toggle="modal" data-bs-target="#mCaixa">📦 CAIXA</button></div>
-            <div class="col-6"><button class="btn-grid" style="background-color: #8e44ad;" data-bs-toggle="modal" data-bs-target="#mEstatisticas">📊 ESTATÍSTICAS</button></div>
-            <div class="col-12"><button class="btn-grid bg-primary" data-bs-toggle="modal" data-bs-target="#mAnuncios">📢 ANÚNCIOS</button></div>
-            <div class="col-6"><button class="btn-grid bg-success" onclick="location.href='/mensalistas'">👤 MENSALISTAS</button></div>
-            <div class="col-6"><button class="btn-grid bg-dark" onclick="location.href='/financeiro'">💰 FINANCEIRO</button></div>
-            <div class="col-12"><button class="btn-grid" style="background:#0d6efd" onclick="location.href='/relatorios'">📄 RELATÓRIOS</button></div>
+            {% if recurso_liberado('config') %}<div class="col-6"><button class="btn-grid" style="background-color: #34495e;" data-bs-toggle="modal" data-bs-target="#mConfig">⚙️ CONFIG</button></div>{% endif %}
+            {% if recurso_liberado('caixa') %}<div class="col-6"><button class="btn-grid" style="background-color: #e67e22;" data-bs-toggle="modal" data-bs-target="#mCaixa">📦 CAIXA</button></div>{% endif %}
+            {% if recurso_liberado('estatisticas') %}<div class="col-6"><button class="btn-grid" style="background-color: #8e44ad;" data-bs-toggle="modal" data-bs-target="#mEstatisticas">📊 ESTATÍSTICAS</button></div>{% endif %}
+            {% if recurso_liberado('anuncios') %}<div class="col-12"><button class="btn-grid bg-primary" data-bs-toggle="modal" data-bs-target="#mAnuncios">📢 ANÚNCIOS</button></div>{% endif %}
+            {% if recurso_liberado('mensalistas') %}<div class="col-6"><button class="btn-grid bg-success" onclick="location.href='/mensalistas'">👤 MENSALISTAS</button></div>{% endif %}
+            {% if recurso_liberado('financeiro') %}<div class="col-6"><button class="btn-grid bg-dark" onclick="location.href='/financeiro'">💰 FINANCEIRO</button></div>{% endif %}
+            {% if recurso_liberado('relatorios') %}<div class="col-12"><button class="btn-grid" style="background:#0d6efd" onclick="location.href='/relatorios'">📄 RELATÓRIOS</button></div>{% endif %}
             {% endif %}
         </div>
     </div>
@@ -732,10 +761,15 @@ def gestao_glppark():
     principal = conn.execute("SELECT id FROM empresas ORDER BY id LIMIT 1").fetchone()
     principal_id = principal['id'] if principal else None
     conn.close()
+    total_empresas = len(empresas)
+    total_ativas = sum(1 for e in empresas if status_empresa(e) in ('ATIVA','TESTE'))
+    total_vencidas = sum(1 for e in empresas if status_empresa(e) == 'VENCIDA')
+    total_suspensas = sum(1 for e in empresas if status_empresa(e) == 'SUSPENSA')
+    receita_prevista = sum(float(e['valor_mensal'] or 0) for e in empresas if status_empresa(e) in ('ATIVA','TESTE'))
     html = """<!doctype html><html lang="pt-BR"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><title>Gestão GLPPARK</title><style>
     body{background:#f4f5f7}.wrap{max-width:980px;margin:auto}.empresa-card{border:0;border-left:5px solid #d35400;border-radius:12px}.mini{font-size:.86rem}.empresa-email{overflow-wrap:anywhere}.status-box{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.dados-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.dado{background:#f8f9fa;border-radius:8px;padding:9px}.dado b{display:block;font-size:.78rem;color:#6c757d;margin-bottom:2px}.acoes-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.acoes-grid .full{grid-column:1/-1}@media(max-width:576px){.container{padding-left:12px;padding-right:12px}.topo h3{font-size:1.35rem}.dados-grid,.acoes-grid{grid-template-columns:1fr}.acoes-grid .full{grid-column:auto}.empresa-card{border-left-width:4px}.card-body{padding:14px}.form-label{font-size:.9rem;font-weight:600}}
     </style></head><body><div class="container py-3 wrap"><div class="topo d-flex justify-content-between align-items-center mb-3"><h3 class="mb-0">🚗 Gestão GLPPARK</h3><a href="/gestao-glppark/sair" class="btn btn-outline-danger btn-sm">Sair</a></div>{% if erro %}<div class="alert alert-danger">{{ erro }}</div>{% endif %}{% if sucesso %}<div class="alert alert-success">{{ sucesso }}</div>{% endif %}
-    <div class="card shadow-sm p-3 mb-3"><h5>Liberar nova empresa</h5><form method="post"><input type="hidden" name="acao" value="criar_empresa"><div class="row g-2"><div class="col-md-6"><label class="form-label">Empresa</label><input name="empresa" class="form-control" placeholder="Nome da empresa" required></div><div class="col-md-6"><label class="form-label">Administrador</label><input name="nome_usuario" class="form-control" placeholder="Nome do administrador" required></div><div class="col-md-6"><label class="form-label">E-mail</label><input name="email" type="email" class="form-control" placeholder="E-mail do administrador" required></div><div class="col-md-6"><label class="form-label">Senha inicial</label><input name="senha" type="password" minlength="6" class="form-control" placeholder="Mínimo 6 caracteres" required></div><div class="col-6 col-md-3"><label class="form-label">Plano</label><select name="plano" id="novoPlano" class="form-select"><option>Basico</option><option>Pro</option><option>Premium</option></select></div><div class="col-6 col-md-3"><label class="form-label">Mensalidade</label><input name="valor_mensal" id="novoValor" type="number" step=".01" min="0" class="form-control" value="49.90"></div><div class="col-12 col-md-3"><label class="form-label">Vencimento</label><input name="vencimento" type="date" class="form-control"></div><div class="col-12 col-md-3"><label class="form-label">Dias de teste</label><input name="dias_teste" type="number" min="0" value="0" class="form-control"></div></div><button class="btn btn-success w-100 mt-3">Liberar empresa</button></form></div>
+    <div class="row g-2 mb-3"><div class="col-6 col-md-3"><div class="card p-2 text-center"><small>Empresas</small><b>{{total_empresas}}</b></div></div><div class="col-6 col-md-3"><div class="card p-2 text-center"><small>Ativas/Teste</small><b class="text-success">{{total_ativas}}</b></div></div><div class="col-6 col-md-3"><div class="card p-2 text-center"><small>Vencidas/Suspensas</small><b class="text-danger">{{total_vencidas + total_suspensas}}</b></div></div><div class="col-6 col-md-3"><div class="card p-2 text-center"><small>Receita prevista/mês</small><b>R$ {{'%.2f'|format(receita_prevista)}}</b></div></div></div><div class="card shadow-sm p-3 mb-3"><h5>Liberar nova empresa</h5><form method="post"><input type="hidden" name="acao" value="criar_empresa"><div class="row g-2"><div class="col-md-6"><label class="form-label">Empresa</label><input name="empresa" class="form-control" placeholder="Nome da empresa" required></div><div class="col-md-6"><label class="form-label">Administrador</label><input name="nome_usuario" class="form-control" placeholder="Nome do administrador" required></div><div class="col-md-6"><label class="form-label">E-mail</label><input name="email" type="email" class="form-control" placeholder="E-mail do administrador" required></div><div class="col-md-6"><label class="form-label">Senha inicial</label><input name="senha" type="password" minlength="6" class="form-control" placeholder="Mínimo 6 caracteres" required></div><div class="col-6 col-md-3"><label class="form-label">Plano</label><select name="plano" id="novoPlano" class="form-select"><option>Basico</option><option>Pro</option><option>Premium</option></select></div><div class="col-6 col-md-3"><label class="form-label">Mensalidade</label><input name="valor_mensal" id="novoValor" type="number" step=".01" min="0" class="form-control" value="49.90"></div><div class="col-12 col-md-3"><label class="form-label">Vencimento</label><input name="vencimento" type="date" class="form-control"></div><div class="col-12 col-md-3"><label class="form-label">Dias de teste</label><input name="dias_teste" type="number" min="0" value="0" class="form-control"></div></div><button class="btn btn-success w-100 mt-3">Liberar empresa</button></form></div>
     <h5 class="mb-2">Empresas cadastradas</h5>
     <div class="d-grid gap-3">{% for e in empresas %}{% set st=status_empresa(e) %}<div class="card empresa-card shadow-sm"><div class="card-body"><div class="d-flex justify-content-between gap-2 align-items-start mb-3"><div><h5 class="mb-1">{{e.nome}}{% if e.id==principal_id %} <span class="badge bg-dark">GLPPARK — Administrador Geral</span>{% endif %}</h5><div class="mini text-muted">{{e.admin_nome or 'Administrador não informado'}}</div><div class="mini text-muted empresa-email">{{e.email or ''}}</div></div><span class="badge {% if st in ['ATIVA','TESTE'] %}bg-success{% elif st=='VENCIDA' %}bg-warning text-dark{% else %}bg-danger{% endif %}">{{st}}</span></div>
     <div class="dados-grid mb-3"><div class="dado"><b>Plano atual</b>{{e.plano or 'Basico'}}</div><div class="dado"><b>Mensalidade</b>R$ {{'%.2f'|format(e.valor_mensal or 0)}}</div><div class="dado"><b>Vencimento</b>{{e.vencimento or 'Não definido'}}</div><div class="dado"><b>Limite de funcionários</b>{% if (e.plano or 'Basico')=='Premium' %}Ilimitado{% else %}{{e.limite_funcionarios or 3}}{% endif %}</div>{% if e.teste_ate %}<div class="dado"><b>Teste até</b>{{e.teste_ate}}</div>{% endif %}</div>
@@ -781,7 +815,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 </body></html>"""
-    return render_template_string(html, empresas=empresas, erro=erro, sucesso=sucesso, status_empresa=status_empresa, principal_id=principal_id)
+    return render_template_string(html, empresas=empresas, erro=erro, sucesso=sucesso, status_empresa=status_empresa, principal_id=principal_id, total_empresas=total_empresas, total_ativas=total_ativas, total_vencidas=total_vencidas, total_suspensas=total_suspensas, receita_prevista=receita_prevista)
 
 @app.route('/gestao-glppark/sair')
 def sair_gestao_glppark():
@@ -803,7 +837,22 @@ def dashboard():
     session['plano'] = emp['plano'] or 'Basico'
     session['status_assinatura'] = status_empresa(emp)
     cfg, anuncios, ativos, concluidos, talao_atual = get_dados()
-    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, qr_entrada=None, saida_recente=None)
+    empresa_vencimento = emp['vencimento'] or ''
+    aviso_vencimento = ''
+    if empresa_vencimento:
+        try:
+            venc = datetime.strptime(empresa_vencimento, '%Y-%m-%d').date()
+            dias = (venc - agora_brasilia().date()).days
+            if 0 <= dias <= 5:
+                aviso_vencimento = f'Atenção: a assinatura vence em {dias} dia(s), em {empresa_vencimento}.'
+        except ValueError:
+            pass
+    return render_template_string(
+        HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos,
+        talao_atual=talao_atual, qr_entrada=None, saida_recente=None,
+        recurso_liberado=recurso_liberado, empresa_vencimento=empresa_vencimento,
+        aviso_vencimento=aviso_vencimento
+    )
 
 @app.route('/logo')
 def logo_empresa():
@@ -879,7 +928,7 @@ def entrada():
         talao_atual = numero_talao
         qr_texto = f"PLACA:{placa}|TALAO:{numero_talao}|ENTRADA:{hora}"
         
-        return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, qr_entrada=qr_texto, placa_recente=placa, modelo_recente=modelo, cor_recente=cor, valor_recente=valor, tipo_tarifa_recente=tipo_tarifa, saida_recente=None)
+        return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, qr_entrada=qr_texto, placa_recente=placa, modelo_recente=modelo, cor_recente=cor, valor_recente=valor, tipo_tarifa_recente=tipo_tarifa, saida_recente=None, recurso_liberado=recurso_liberado, empresa_vencimento='', aviso_vencimento='')
     
     return redirect(url_for('dashboard'))
 
@@ -904,7 +953,7 @@ def reimprimir(id):
         return redirect(url_for('dashboard'))
 
     qr_texto = f"PLACA:{v['placa']}|TALAO:{talao_atual}|ENTRADA:{v['hora_entrada']}"
-    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, qr_entrada=qr_texto, placa_recente=v['placa'], modelo_recente=v['modelo'], cor_recente=v['cor'], valor_recente=v['valor'], tipo_tarifa_recente=v['tipo_tarifa'] or 'diaria', saida_recente=None)
+    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, qr_entrada=qr_texto, placa_recente=v['placa'], modelo_recente=v['modelo'], cor_recente=v['cor'], valor_recente=v['valor'], tipo_tarifa_recente=v['tipo_tarifa'] or 'diaria', saida_recente=None, recurso_liberado=recurso_liberado, empresa_vencimento='', aviso_vencimento='')
 
 @app.route('/saida_scanner', methods=['POST'])
 def saida_scanner():
@@ -955,7 +1004,7 @@ def saida_scanner():
     v_atualizado = conn.execute("SELECT * FROM veiculos WHERE id=? AND empresa_id=?", (v['id'], eid)).fetchone()
     conn.close()
     
-    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, saida_recente=v_atualizado, qr_entrada=None)
+    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, saida_recente=v_atualizado, qr_entrada=None, recurso_liberado=recurso_liberado, empresa_vencimento='', aviso_vencimento='')
 
 @app.route('/editar/<int:id>', methods=['POST'])
 def editar(id):
@@ -1028,6 +1077,8 @@ def salvar_config():
 def add_anuncio():
     if 'email' not in session or session.get('perfil') != 'admin':
         return redirect(url_for('login'))
+    bloqueio = exigir_recurso('anuncios')
+    if bloqueio: return bloqueio
     conn = obter_conexao()
     conn.execute("INSERT INTO anuncios (empresa_id,texto) VALUES (?,?)", (session['empresa_id'], request.form['texto']))
     conn.commit()
@@ -1038,6 +1089,8 @@ def add_anuncio():
 def del_anuncio(id):
     if 'email' not in session or session.get('perfil') != 'admin':
         return redirect(url_for('login'))
+    bloqueio = exigir_recurso('anuncios')
+    if bloqueio: return bloqueio
     conn = obter_conexao()
     conn.execute("DELETE FROM anuncios WHERE id=? AND empresa_id=?", (id, session['empresa_id']))
     conn.commit()
@@ -1064,9 +1117,11 @@ def funcionarios():
         except Exception:
             conn.rollback(); erro = 'Não foi possível cadastrar. O e-mail pode já estar em uso.'
     lista = conn.execute("SELECT id,nome,email,perfil FROM usuarios WHERE empresa_id=? ORDER BY nome", (session['empresa_id'],)).fetchall()
+    emp_info = conn.execute("SELECT plano,limite_funcionarios FROM empresas WHERE id=?", (session['empresa_id'],)).fetchone()
+    total_funcionarios = sum(1 for u in lista if u['perfil'] == 'funcionario')
     conn.close()
-    html = '''<!doctype html><html lang="pt-BR"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"></head><body class="bg-light"><div class="container py-3" style="max-width:650px"><div class="card p-3 shadow"><h3>Funcionários</h3>{% if erro %}<div class="alert alert-danger">{{ erro }}</div>{% endif %}<form method="post"><input name="nome" class="form-control mb-2" placeholder="Nome" required><input name="email" type="email" class="form-control mb-2" placeholder="E-mail" required><input name="senha" type="password" class="form-control mb-2" placeholder="Senha inicial" minlength="6" required><button class="btn btn-primary w-100">Cadastrar funcionário</button></form><hr>{% for u in lista %}<div class="border rounded p-2 mb-2"><b>{{u.nome}}</b><br><small>{{u.email}} — {{u.perfil}}</small>{% if u.perfil != 'admin' %}<a class="btn btn-sm btn-outline-danger float-end" href="/excluir_funcionario/{{u.id}}">Excluir</a>{% endif %}</div>{% endfor %}<a href="/dashboard" class="btn btn-secondary">Voltar</a></div></div></body></html>'''
-    return render_template_string(html, lista=lista, erro=erro)
+    html = '''<!doctype html><html lang="pt-BR"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"></head><body class="bg-light"><div class="container py-3" style="max-width:650px"><div class="card p-3 shadow"><h3>Funcionários</h3><div class="alert alert-info py-2"><b>Plano:</b> {{emp_info.plano if emp_info else 'Basico'}} — <b>Funcionários:</b> {{total_funcionarios}} / {% if emp_info and emp_info.plano=='Premium' %}Ilimitado{% else %}{{emp_info.limite_funcionarios if emp_info else 3}}{% endif %}</div>{% if erro %}<div class="alert alert-danger">{{ erro }}</div>{% endif %}<form method="post"><input name="nome" class="form-control mb-2" placeholder="Nome" required><input name="email" type="email" class="form-control mb-2" placeholder="E-mail" required><input name="senha" type="password" class="form-control mb-2" placeholder="Senha inicial" minlength="6" required><button class="btn btn-primary w-100">Cadastrar funcionário</button></form><hr>{% for u in lista %}<div class="border rounded p-2 mb-2"><b>{{u.nome}}</b><br><small>{{u.email}} — {{u.perfil}}</small>{% if u.perfil != 'admin' %}<a class="btn btn-sm btn-outline-danger float-end" href="/excluir_funcionario/{{u.id}}">Excluir</a>{% endif %}</div>{% endfor %}<a href="/dashboard" class="btn btn-secondary">Voltar</a></div></div></body></html>'''
+    return render_template_string(html, lista=lista, erro=erro, emp_info=emp_info, total_funcionarios=total_funcionarios)
 
 @app.route('/excluir_funcionario/<int:id>')
 def excluir_funcionario(id):
@@ -1081,6 +1136,8 @@ def somente_admin(): return 'email' in session and session.get('perfil') == 'adm
 @app.route('/mensalistas', methods=['GET','POST'])
 def mensalistas():
     if not somente_admin(): return redirect(url_for('dashboard'))
+    bloqueio = exigir_recurso('mensalistas')
+    if bloqueio: return bloqueio
     conn=obter_conexao(); eid=session['empresa_id']
     if request.method=='POST':
         conn.execute("INSERT INTO mensalistas(empresa_id,nome,documento,telefone,placa,modelo,valor_mensal,dia_vencimento,ativo) VALUES(?,?,?,?,?,?,?,?,1)",(eid,request.form['nome'],request.form.get('documento',''),request.form.get('telefone',''),request.form['placa'].upper().strip(),request.form.get('modelo',''),float(request.form.get('valor_mensal',0)),int(request.form.get('dia_vencimento',10))))
@@ -1099,6 +1156,8 @@ def mensalista_status(id):
 @app.route('/financeiro', methods=['GET','POST'])
 def financeiro():
     if not somente_admin(): return redirect(url_for('dashboard'))
+    bloqueio = exigir_recurso('financeiro')
+    if bloqueio: return bloqueio
     conn=obter_conexao();eid=session['empresa_id'];caixa=obter_caixa_aberto(conn)
     if request.method=='POST':
         acao=request.form.get('acao');agora=agora_banco()
@@ -1120,6 +1179,8 @@ def financeiro():
 @app.route('/relatorios')
 def relatorios():
     if not somente_admin(): return redirect(url_for('dashboard'))
+    bloqueio = exigir_recurso('relatorios')
+    if bloqueio: return bloqueio
     inicio=request.args.get('inicio',agora_brasilia().strftime('%Y-%m-01'));fim=request.args.get('fim',agora_brasilia().strftime('%Y-%m-%d'));conn=obter_conexao();eid=session['empresa_id'];regs=conn.execute("SELECT * FROM veiculos WHERE empresa_id=? AND substr(hora_entrada,1,10)>=? AND substr(hora_entrada,1,10)<=? ORDER BY id DESC",(eid,inicio,fim)).fetchall();aud=conn.execute("SELECT * FROM auditoria WHERE empresa_id=? ORDER BY id DESC LIMIT 50",(eid,)).fetchall();conn.close();receita=sum(float(x['valor_total'] or 0) for x in regs if x['status']=='FINALIZADO');cancelados=sum(1 for x in regs if x['cancelado']);linhas=''.join(f'''<tr><td>{x['placa']}</td><td>{x['hora_entrada']}</td><td>{x['hora_saida'] or '-'}</td><td>{x['forma_pagamento'] or '-'}</td><td>R$ {float(x['valor_total'] or 0):.2f}</td><td>{x['status']}</td><td>{f'<a href="/cancelar_registro/{x["id"]}" class="btn btn-sm btn-outline-danger">Cancelar</a>' if not x['cancelado'] else 'Cancelado'}</td></tr>''' for x in regs);logs=''.join(f'''<li class="list-group-item"><small>{x['criado_em']} — {x['acao']} — {x['detalhes'] or ''}</small></li>''' for x in aud)
     conteudo=f'''<form class="row g-2 mb-3"><div class="col"><input class="form-control" type="date" name="inicio" value="{inicio}"></div><div class="col"><input class="form-control" type="date" name="fim" value="{fim}"></div><div class="col"><button class="btn btn-primary w-100">Filtrar</button></div></form><div class="row g-2 mb-3"><div class="col"><div class="card p-3"><b>Registros</b><span>{len(regs)}</span></div></div><div class="col"><div class="card p-3"><b>Receita</b><span>R$ {receita:.2f}</span></div></div><div class="col"><div class="card p-3"><b>Cancelados</b><span>{cancelados}</span></div></div></div><a class="btn btn-success mb-3" href="/exportar_csv?inicio={inicio}&fim={fim}">Exportar CSV</a><div class="card p-2 table-responsive"><table class="table table-sm"><thead><tr><th>Placa</th><th>Entrada</th><th>Saída</th><th>Pagamento</th><th>Total</th><th>Status</th><th>Ação</th></tr></thead><tbody>{linhas}</tbody></table></div><h5 class="mt-3">Auditoria</h5><ul class="list-group">{logs}</ul>'''
     return render_template_string(BASE_PRO,titulo='Relatórios',conteudo=conteudo)
