@@ -180,26 +180,40 @@ def exigir_recurso(recurso):
     return None
 
 def status_empresa(emp):
-    """Retorna ATIVA, TESTE, VENCIDA ou SUSPENSA sem apagar dados da empresa."""
+    """Retorna ATIVA, TESTE, VENCIDA ou SUSPENSA sem apagar dados da empresa.
+
+    Prioridade:
+    1. SUSPENSA
+    2. VENCIDA
+    3. TESTE
+    4. ATIVA
+    """
     if not emp:
         return 'SUSPENSA'
+
     if int(emp['ativo'] or 0) != 1 or str(emp['status_assinatura'] or '').upper() == 'SUSPENSA':
         return 'SUSPENSA'
+
     hoje = agora_brasilia().date()
-    teste_ate = (emp['teste_ate'] or '').strip()
-    if teste_ate:
-        try:
-            if hoje <= datetime.strptime(teste_ate, '%Y-%m-%d').date():
-                return 'TESTE'
-        except ValueError:
-            pass
+
     vencimento = (emp['vencimento'] or '').strip()
     if vencimento:
         try:
-            if hoje > datetime.strptime(vencimento, '%Y-%m-%d').date():
+            data_vencimento = datetime.strptime(vencimento, '%Y-%m-%d').date()
+            if hoje > data_vencimento:
                 return 'VENCIDA'
         except ValueError:
             pass
+
+    teste_ate = (emp['teste_ate'] or '').strip()
+    if teste_ate:
+        try:
+            data_teste = datetime.strptime(teste_ate, '%Y-%m-%d').date()
+            if hoje <= data_teste:
+                return 'TESTE'
+        except ValueError:
+            pass
+
     return 'ATIVA'
 
 def acesso_empresa_liberado(emp):
