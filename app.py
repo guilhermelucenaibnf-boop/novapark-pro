@@ -718,6 +718,73 @@ def gestao_glppark():
             finally:
                 conn.close()
 
+    if request.method == 'POST' and request.form.get('acao') == 'criar_empresa_teste':
+        plano = request.form.get('plano_teste', 'Basico')
+        if plano not in PLANOS_GLPPARK:
+            plano = 'Basico'
+        dias_teste = max(1, min(90, int(request.form.get('dias_teste_auto', 7) or 7)))
+        token = secrets.token_hex(3)
+        empresa = f'Empresa Teste {token.upper()}'
+        nome = 'Administrador Teste'
+        email = f'teste-{token}@glppark.local'
+        senha = 'Teste@' + secrets.token_hex(3)
+        valor = PLANOS_GLPPARK[plano]['valor_sugerido']
+        limite = PLANOS_GLPPARK[plano]['limite_funcionarios']
+        teste_ate = (agora_brasilia().date() + timedelta(days=dias_teste)).isoformat()
+        conn = obter_conexao()
+        try:
+            codigo = secrets.token_hex(5)
+            if conn.pg:
+                empresa_id = conn.execute("INSERT INTO empresas (nome,codigo,ativo,plano,valor_mensal,vencimento,status_assinatura,limite_funcionarios,teste_ate) VALUES (?,?,?,?,?,?,?,?,?) RETURNING id", (empresa,codigo,1,plano,valor,None,'TESTE',limite,teste_ate)).fetchone()['id']
+            else:
+                empresa_id = conn.execute("INSERT INTO empresas (nome,codigo,ativo,plano,valor_mensal,vencimento,status_assinatura,limite_funcionarios,teste_ate) VALUES (?,?,?,?,?,?,?,?,?)", (empresa,codigo,1,plano,valor,None,'TESTE',limite,teste_ate)).lastrowid
+            conn.execute("INSERT INTO usuarios (empresa_id,nome,email,senha,perfil) VALUES (?,?,?,?,?)", (empresa_id,nome,email,generate_password_hash(senha),'admin'))
+            conn.execute("INSERT INTO configuracoes (empresa_id,nome,cnpj,endereco,telefone,horario,mensagem,impressora_status,valor_diaria,valor_van,valor_pernoite,logo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", (empresa_id,empresa,'','','','07:00-22:00','Ambiente de teste GLPPARK','Thermer Bluetooth',50,30,40,''))
+            conn.commit()
+            sucesso = f'Empresa de teste criada. Login: {email} | Senha: {senha} | Plano: {plano} | Teste até: {teste_ate}'
+        except Exception as e:
+            conn.rollback(); erro = f'Não foi possível criar a empresa de teste: {e}'
+        finally:
+            conn.close()
+
+    if request.method == 'POST' and request.form.get('acao') in ('gerar_funcionarios_teste','simular_vencimento','excluir_empresa_teste'):
+        eid = int(request.form.get('empresa_id', 0) or 0)
+        conn = obter_conexao()
+        try:
+            principal = conn.execute("SELECT id FROM empresas ORDER BY id LIMIT 1").fetchone()
+            principal_id_check = principal['id'] if principal else None
+            emp = conn.execute("SELECT * FROM empresas WHERE id=?", (eid,)).fetchone()
+            if not emp:
+                erro = 'Empresa não encontrada.'
+            elif eid == principal_id_check:
+                erro = 'A Empresa principal do GLPPARK é protegida e não pode usar esta ação de teste.'
+            elif request.form.get('acao') == 'gerar_funcionarios_teste':
+                limite = int(emp['limite_funcionarios'] or 3)
+                alvo = min(limite, 20) if (emp['plano'] or 'Basico') == 'Premium' else limite
+                existentes = conn.execute("SELECT COUNT(*) AS total FROM usuarios WHERE empresa_id=? AND perfil='funcionario'", (eid,)).fetchone()['total']
+                criados = 0
+                for n in range(existentes + 1, alvo + 1):
+                    token = secrets.token_hex(3)
+                    email = f'func-{eid}-{token}@glppark.local'
+                    conn.execute("INSERT INTO usuarios(empresa_id,nome,email,senha,perfil) VALUES(?,?,?,?,?)", (eid,f'Funcionário Teste {n}',email,generate_password_hash('Teste@123'),'funcionario'))
+                    criados += 1
+                conn.commit()
+                sucesso = f'{criados} funcionário(s) de teste criado(s). O limite do plano é {"ilimitado" if (emp["plano"] or "") == "Premium" else limite}.'
+            elif request.form.get('acao') == 'simular_vencimento':
+                ontem = (agora_brasilia().date() - timedelta(days=1)).isoformat()
+                conn.execute("UPDATE empresas SET teste_ate=NULL,vencimento=?,ativo=1,status_assinatura='ATIVA' WHERE id=?", (ontem,eid))
+                conn.commit(); sucesso = 'Vencimento simulado. A empresa agora deve aparecer como VENCIDA e ter o login bloqueado.'
+            else:
+                # Exclui apenas empresa secundária criada para testes e todos os dados vinculados.
+                for tabela in ('movimentos_caixa','caixas','auditoria','veiculos','mensalistas','anuncios','configuracoes','usuarios'):
+                    conn.execute(f"DELETE FROM {tabela} WHERE empresa_id=?", (eid,))
+                conn.execute("DELETE FROM empresas WHERE id=?", (eid,))
+                conn.commit(); sucesso = 'Empresa de teste e seus dados foram excluídos.'
+        except Exception as e:
+            conn.rollback(); erro = f'Falha na ação de teste: {e}'
+        finally:
+            conn.close()
+
     if request.method == 'POST' and request.form.get('acao') in ('atualizar_empresa','trocar_plano','suspender_empresa','reativar_empresa'):
         eid = int(request.form.get('empresa_id', 0) or 0)
         conn = obter_conexao()
@@ -769,7 +836,7 @@ def gestao_glppark():
     html = """<!doctype html><html lang="pt-BR"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><title>Gestão GLPPARK</title><style>
     body{background:#f4f5f7}.wrap{max-width:980px;margin:auto}.empresa-card{border:0;border-left:5px solid #d35400;border-radius:12px}.mini{font-size:.86rem}.empresa-email{overflow-wrap:anywhere}.status-box{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.dados-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.dado{background:#f8f9fa;border-radius:8px;padding:9px}.dado b{display:block;font-size:.78rem;color:#6c757d;margin-bottom:2px}.acoes-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.acoes-grid .full{grid-column:1/-1}@media(max-width:576px){.container{padding-left:12px;padding-right:12px}.topo h3{font-size:1.35rem}.dados-grid,.acoes-grid{grid-template-columns:1fr}.acoes-grid .full{grid-column:auto}.empresa-card{border-left-width:4px}.card-body{padding:14px}.form-label{font-size:.9rem;font-weight:600}}
     </style></head><body><div class="container py-3 wrap"><div class="topo d-flex justify-content-between align-items-center mb-3"><h3 class="mb-0">🚗 Gestão GLPPARK</h3><a href="/gestao-glppark/sair" class="btn btn-outline-danger btn-sm">Sair</a></div>{% if erro %}<div class="alert alert-danger">{{ erro }}</div>{% endif %}{% if sucesso %}<div class="alert alert-success">{{ sucesso }}</div>{% endif %}
-    <div class="row g-2 mb-3"><div class="col-6 col-md-3"><div class="card p-2 text-center"><small>Empresas</small><b>{{total_empresas}}</b></div></div><div class="col-6 col-md-3"><div class="card p-2 text-center"><small>Ativas/Teste</small><b class="text-success">{{total_ativas}}</b></div></div><div class="col-6 col-md-3"><div class="card p-2 text-center"><small>Vencidas/Suspensas</small><b class="text-danger">{{total_vencidas + total_suspensas}}</b></div></div><div class="col-6 col-md-3"><div class="card p-2 text-center"><small>Receita prevista/mês</small><b>R$ {{'%.2f'|format(receita_prevista)}}</b></div></div></div><div class="card shadow-sm p-3 mb-3"><h5>Liberar nova empresa</h5><form method="post"><input type="hidden" name="acao" value="criar_empresa"><div class="row g-2"><div class="col-md-6"><label class="form-label">Empresa</label><input name="empresa" class="form-control" placeholder="Nome da empresa" required></div><div class="col-md-6"><label class="form-label">Administrador</label><input name="nome_usuario" class="form-control" placeholder="Nome do administrador" required></div><div class="col-md-6"><label class="form-label">E-mail</label><input name="email" type="email" class="form-control" placeholder="E-mail do administrador" required></div><div class="col-md-6"><label class="form-label">Senha inicial</label><input name="senha" type="password" minlength="6" class="form-control" placeholder="Mínimo 6 caracteres" required></div><div class="col-6 col-md-3"><label class="form-label">Plano</label><select name="plano" id="novoPlano" class="form-select"><option value="Basico">Basico</option><option value="Pro">Pro</option><option value="Premium">Premium</option></select></div><div class="col-6 col-md-3"><label class="form-label">Mensalidade</label><input name="valor_mensal" id="novoValor" type="number" step=".01" min="0" class="form-control" value="49.90"></div><div class="col-12 col-md-3"><label class="form-label">Vencimento</label><input name="vencimento" type="date" class="form-control"></div><div class="col-12 col-md-3"><label class="form-label">Dias de teste</label><input name="dias_teste" type="number" min="0" value="0" class="form-control"></div></div><button class="btn btn-success w-100 mt-3">Liberar empresa</button></form></div>
+    <div class="row g-2 mb-3"><div class="col-6 col-md-3"><div class="card p-2 text-center"><small>Empresas</small><b>{{total_empresas}}</b></div></div><div class="col-6 col-md-3"><div class="card p-2 text-center"><small>Ativas/Teste</small><b class="text-success">{{total_ativas}}</b></div></div><div class="col-6 col-md-3"><div class="card p-2 text-center"><small>Vencidas/Suspensas</small><b class="text-danger">{{total_vencidas + total_suspensas}}</b></div></div><div class="col-6 col-md-3"><div class="card p-2 text-center"><small>Receita prevista/mês</small><b>R$ {{'%.2f'|format(receita_prevista)}}</b></div></div></div><div class="card shadow-sm p-3 mb-3 border-warning"><h5>🧪 Modo de teste rápido</h5><p class="small text-muted mb-2">Cria login fictício automaticamente, sem precisar usar outro e-mail real.</p><form method="post"><input type="hidden" name="acao" value="criar_empresa_teste"><div class="row g-2"><div class="col-6"><label class="form-label">Plano</label><select name="plano_teste" class="form-select"><option value="Basico">Básico</option><option value="Pro">Pro</option><option value="Premium">Premium</option></select></div><div class="col-6"><label class="form-label">Dias de teste</label><input name="dias_teste_auto" type="number" min="1" max="90" value="7" class="form-control"></div></div><button class="btn btn-warning w-100 mt-2 fw-bold">Criar empresa de teste automaticamente</button></form></div><div class="card shadow-sm p-3 mb-3"><h5>Liberar nova empresa</h5><form method="post"><input type="hidden" name="acao" value="criar_empresa"><div class="row g-2"><div class="col-md-6"><label class="form-label">Empresa</label><input name="empresa" class="form-control" placeholder="Nome da empresa" required></div><div class="col-md-6"><label class="form-label">Administrador</label><input name="nome_usuario" class="form-control" placeholder="Nome do administrador" required></div><div class="col-md-6"><label class="form-label">E-mail</label><input name="email" type="email" class="form-control" placeholder="E-mail do administrador" required></div><div class="col-md-6"><label class="form-label">Senha inicial</label><input name="senha" type="password" minlength="6" class="form-control" placeholder="Mínimo 6 caracteres" required></div><div class="col-6 col-md-3"><label class="form-label">Plano</label><select name="plano" id="novoPlano" class="form-select"><option value="Basico">Basico</option><option value="Pro">Pro</option><option value="Premium">Premium</option></select></div><div class="col-6 col-md-3"><label class="form-label">Mensalidade</label><input name="valor_mensal" id="novoValor" type="number" step=".01" min="0" class="form-control" value="49.90"></div><div class="col-12 col-md-3"><label class="form-label">Vencimento</label><input name="vencimento" type="date" class="form-control"></div><div class="col-12 col-md-3"><label class="form-label">Dias de teste</label><input name="dias_teste" type="number" min="0" value="0" class="form-control"></div></div><button class="btn btn-success w-100 mt-3">Liberar empresa</button></form></div>
     <h5 class="mb-2">Empresas cadastradas</h5>
     <div class="d-grid gap-3">{% for e in empresas %}{% set st=status_empresa(e) %}<div class="card empresa-card shadow-sm"><div class="card-body"><div class="d-flex justify-content-between gap-2 align-items-start mb-3"><div><h5 class="mb-1">{{e.nome}}{% if e.id==principal_id %} <span class="badge bg-dark">GLPPARK — Administrador Geral</span>{% endif %}</h5><div class="mini text-muted">{{e.admin_nome or 'Administrador não informado'}}</div><div class="mini text-muted empresa-email">{{e.email or ''}}</div></div><span class="badge {% if st in ['ATIVA','TESTE'] %}bg-success{% elif st=='VENCIDA' %}bg-warning text-dark{% else %}bg-danger{% endif %}">{{st}}</span></div>
     <div class="dados-grid mb-3"><div class="dado"><b>Plano atual</b>{{e.plano or 'Basico'}}</div><div class="dado"><b>Mensalidade</b>R$ {{'%.2f'|format(e.valor_mensal or 0)}}</div><div class="dado"><b>Vencimento</b>{{e.vencimento or 'Não definido'}}</div><div class="dado"><b>Limite de funcionários</b>{% if (e.plano or 'Basico')=='Premium' %}Ilimitado{% else %}{{e.limite_funcionarios or 3}}{% endif %}</div>{% if e.teste_ate %}<div class="dado"><b>Teste até</b>{{e.teste_ate}}</div>{% endif %}</div>
@@ -787,6 +854,7 @@ def gestao_glppark():
 </form>
 </div>
 <form method="post" class="mb-2"><input type="hidden" name="acao" value="atualizar_empresa"><input type="hidden" name="empresa_id" value="{{e.id}}"><input type="hidden" name="plano" value="{{e.plano or 'Basico'}}"><div class="row g-2"><div class="col-12 col-sm-6"><label class="form-label">Valor mensal personalizado</label><input name="valor_mensal" type="number" step=".01" min="0" value="{{e.valor_mensal or 0}}" class="form-control"></div><div class="col-12 col-sm-6"><label class="form-label">Vencimento</label><input name="vencimento" type="date" value="{{e.vencimento or ''}}" class="form-control"></div></div><button class="btn btn-primary w-100 mt-2">Salvar valor e vencimento</button></form>
+    {% if e.id!=principal_id %}<div class="border rounded p-2 mb-2 bg-light"><div class="small fw-bold mb-2">🧪 Ferramentas de teste</div><div class="acoes-grid"><form method="post"><input type="hidden" name="acao" value="gerar_funcionarios_teste"><input type="hidden" name="empresa_id" value="{{e.id}}"><button class="btn btn-outline-primary w-100">Gerar funcionários</button></form><form method="post"><input type="hidden" name="acao" value="simular_vencimento"><input type="hidden" name="empresa_id" value="{{e.id}}"><button class="btn btn-outline-warning w-100">Simular vencimento</button></form><form method="post" class="full" onsubmit="return confirm('Excluir esta empresa e TODOS os dados dela?');"><input type="hidden" name="acao" value="excluir_empresa_teste"><input type="hidden" name="empresa_id" value="{{e.id}}"><button class="btn btn-outline-danger w-100">🗑️ Excluir empresa de teste</button></form></div></div>{% endif %}
     {% if e.id==principal_id %}<div class="alert alert-secondary py-2 mb-0 text-center">Empresa principal protegida contra suspensão.</div>{% elif st=='SUSPENSA' %}<form method="post"><input type="hidden" name="acao" value="reativar_empresa"><input type="hidden" name="empresa_id" value="{{e.id}}"><button class="btn btn-success w-100">Reativar empresa</button></form>{% else %}<form method="post"><input type="hidden" name="acao" value="suspender_empresa"><input type="hidden" name="empresa_id" value="{{e.id}}"><button class="btn btn-outline-danger w-100">Suspender empresa</button></form>{% endif %}</div></div>{% else %}<div class="alert alert-secondary">Nenhuma empresa cadastrada.</div>{% endfor %}</div></div>
 
 
