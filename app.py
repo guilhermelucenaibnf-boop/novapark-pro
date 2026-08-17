@@ -60,7 +60,7 @@ def obter_conexao(): return Conexao()
 def inicializar_banco():
     conn = obter_conexao()
     auto = 'SERIAL PRIMARY KEY' if conn.pg else 'INTEGER PRIMARY KEY AUTOINCREMENT'
-    conn.execute(f'''CREATE TABLE IF NOT EXISTS empresas (id {auto}, nome TEXT NOT NULL, codigo TEXT UNIQUE NOT NULL, ativo INTEGER DEFAULT 1, plano TEXT DEFAULT 'Basico', valor_mensal REAL DEFAULT 0, vencimento TEXT, status_assinatura TEXT DEFAULT 'ATIVA', limite_funcionarios INTEGER DEFAULT 3, teste_ate TEXT)''')
+    conn.execute(f'''CREATE TABLE IF NOT EXISTS empresas (id {auto}, nome TEXT NOT NULL, codigo TEXT UNIQUE NOT NULL, ativo INTEGER DEFAULT 1, plano TEXT DEFAULT 'Basico', valor_mensal REAL DEFAULT 0, vencimento TEXT, status_assinatura TEXT DEFAULT 'ATIVA', limite_funcionarios INTEGER DEFAULT 3, teste_ate TEXT, principal INTEGER DEFAULT 0)''')
     conn.execute(f'''CREATE TABLE IF NOT EXISTS usuarios (id {auto}, empresa_id INTEGER NOT NULL, nome TEXT, email TEXT UNIQUE NOT NULL, senha TEXT NOT NULL, perfil TEXT DEFAULT 'funcionario')''')
     conn.execute(f'''CREATE TABLE IF NOT EXISTS configuracoes (id {auto}, empresa_id INTEGER UNIQUE NOT NULL, nome TEXT, cnpj TEXT, endereco TEXT, telefone TEXT, horario TEXT, mensagem TEXT, impressora_status TEXT, valor_diaria REAL DEFAULT 50, valor_van REAL DEFAULT 30, valor_pernoite REAL DEFAULT 40, valor_hora REAL DEFAULT 10, valor_fracao REAL DEFAULT 5, minutos_fracao INTEGER DEFAULT 30, taxa_talao REAL DEFAULT 30, total_vagas INTEGER DEFAULT 50, logo TEXT)''')
     conn.execute(f'''CREATE TABLE IF NOT EXISTS anuncios (id {auto}, empresa_id INTEGER NOT NULL, texto TEXT)''')
@@ -73,7 +73,7 @@ def inicializar_banco():
     tabelas_colunas = {
         'empresas': [
             ('plano',"TEXT DEFAULT 'Basico'"),('valor_mensal','REAL DEFAULT 0'),('vencimento','TEXT'),
-            ('status_assinatura',"TEXT DEFAULT 'ATIVA'"),('limite_funcionarios','INTEGER DEFAULT 3'),('teste_ate','TEXT')
+            ('status_assinatura',"TEXT DEFAULT 'ATIVA'"),('limite_funcionarios','INTEGER DEFAULT 3'),('teste_ate','TEXT'),('principal','INTEGER DEFAULT 0')
         ],
         'usuarios': [('empresa_id','INTEGER'),('nome','TEXT'),('email','TEXT'),('senha','TEXT'),('perfil',"TEXT DEFAULT 'funcionario'")],
         'configuracoes': [
@@ -100,16 +100,33 @@ def inicializar_banco():
             existentes = {r[1] for r in conn.execute(f'PRAGMA table_info({tabela})').fetchall()}
             for coluna, tipo in colunas:
                 if coluna not in existentes: conn.execute(f'ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}')
+    # Garante uma empresa administrativa GLPPARK fixa e independente da ordem dos IDs.
+    principal = conn.execute("SELECT id FROM empresas WHERE COALESCE(principal,0)=1 ORDER BY id LIMIT 1").fetchone()
+    if not principal:
+        por_codigo = conn.execute("SELECT id FROM empresas WHERE codigo=? LIMIT 1", ('glppark-principal',)).fetchone()
+        if por_codigo:
+            principal_id = por_codigo['id']
+            conn.execute("UPDATE empresas SET principal=1,ativo=1,status_assinatura='ATIVA',plano='Premium',valor_mensal=0,limite_funcionarios=999 WHERE id=?", (principal_id,))
+        elif conn.pg:
+            principal_id = conn.execute("INSERT INTO empresas(nome,codigo,ativo,plano,valor_mensal,status_assinatura,limite_funcionarios,principal) VALUES (?,?,?,?,?,?,?,1) RETURNING id", ('GLPPARK — Administração', 'glppark-principal', 1, 'Premium', 0, 'ATIVA', 999)).fetchone()['id']
+        else:
+            principal_id = conn.execute("INSERT INTO empresas(nome,codigo,ativo,plano,valor_mensal,status_assinatura,limite_funcionarios,principal) VALUES (?,?,?,?,?,?,?,1)", ('GLPPARK — Administração', 'glppark-principal', 1, 'Premium', 0, 'ATIVA', 999)).lastrowid
+    else:
+        principal_id = principal['id']
+
+    # Evita que qualquer empresa cliente/teste vire Administrador Geral por engano.
+    conn.execute("UPDATE empresas SET principal=0 WHERE id<>? AND COALESCE(principal,0)<>0", (principal_id,))
+    conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_empresa_principal_unica ON empresas(principal) WHERE principal=1')
+
+    cfg_principal = conn.execute("SELECT id FROM configuracoes WHERE empresa_id=?", (principal_id,)).fetchone()
+    if not cfg_principal:
+        conn.execute("""INSERT INTO configuracoes (empresa_id,nome,cnpj,endereco,telefone,horario,mensagem,impressora_status,valor_diaria,valor_van,valor_pernoite,logo)
+                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""", (principal_id,'GLPPARK','','','','07:00-22:00','Administração Geral GLPPARK','Thermer Bluetooth',50,30,40,''))
+
     legado = conn.execute('SELECT COUNT(*) AS total FROM configuracoes WHERE empresa_id IS NULL').fetchone()
     total_legado = legado['total'] if hasattr(legado, 'keys') else legado[0]
     if total_legado:
-        primeira = conn.execute('SELECT id FROM empresas ORDER BY id LIMIT 1').fetchone()
-        if primeira:
-            empresa_legada = primeira['id']
-        elif conn.pg:
-            empresa_legada = conn.execute("INSERT INTO empresas(nome,codigo) VALUES (?,?) RETURNING id", ('Empresa principal', secrets.token_hex(5))).fetchone()['id']
-        else:
-            empresa_legada = conn.execute("INSERT INTO empresas(nome,codigo) VALUES (?,?)", ('Empresa principal', secrets.token_hex(5))).lastrowid
+        empresa_legada = principal_id
         for tabela in ('usuarios','configuracoes','anuncios','veiculos'):
             conn.execute(f'UPDATE {tabela} SET empresa_id=? WHERE empresa_id IS NULL', (empresa_legada,))
         conn.execute("UPDATE usuarios SET perfil='admin' WHERE empresa_id=?", (empresa_legada,))
@@ -768,7 +785,7 @@ def gestao_glppark():
         eid = int(request.form.get('empresa_id', 0) or 0)
         conn = obter_conexao()
         try:
-            principal = conn.execute("SELECT id FROM empresas ORDER BY id LIMIT 1").fetchone()
+            principal = conn.execute("SELECT id FROM empresas WHERE COALESCE(principal,0)=1 ORDER BY id LIMIT 1").fetchone()
             principal_id_check = principal['id'] if principal else None
             emp = conn.execute("SELECT * FROM empresas WHERE id=?", (eid,)).fetchone()
             if not emp:
@@ -828,7 +845,7 @@ def gestao_glppark():
         conn = obter_conexao()
         try:
             acao = request.form.get('acao')
-            principal = conn.execute("SELECT id FROM empresas ORDER BY id LIMIT 1").fetchone()
+            principal = conn.execute("SELECT id FROM empresas WHERE COALESCE(principal,0)=1 ORDER BY id LIMIT 1").fetchone()
             principal_id = principal['id'] if principal else None
             if acao == 'suspender_empresa':
                 if eid == principal_id:
@@ -863,7 +880,7 @@ def gestao_glppark():
 
     conn = obter_conexao()
     empresas = conn.execute("SELECT e.*,u.nome AS admin_nome,u.email FROM empresas e LEFT JOIN usuarios u ON u.empresa_id=e.id AND u.perfil='admin' ORDER BY e.id DESC").fetchall()
-    principal = conn.execute("SELECT id FROM empresas ORDER BY id LIMIT 1").fetchone()
+    principal = conn.execute("SELECT id FROM empresas WHERE COALESCE(principal,0)=1 ORDER BY id LIMIT 1").fetchone()
     principal_id = principal['id'] if principal else None
     conn.close()
     total_empresas = len(empresas)
