@@ -653,16 +653,52 @@ def gestao_glppark():
 
     if not session.get('gestor_glppark'):
         html = """<!doctype html><html lang="pt-BR"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><title>Gestão GLPPARK</title></head><body class="bg-light d-flex align-items-center justify-content-center vh-100"><div class="card shadow p-4" style="width:100%;max-width:420px"><h3 class="text-center mb-3">🔐 Gestão GLPPARK</h3>{% if erro %}<div class="alert alert-danger">{{ erro }}</div>{% endif %}<form method="post"><input type="hidden" name="acao" value="login"><label class="form-label">Senha mestra</label><input class="form-control mb-3" type="password" name="senha" required><button class="btn btn-dark w-100">Entrar</button></form><a class="btn btn-link mt-2" href="/">Voltar ao login</a></div><script>
-    const PRECOS_PLANOS={Basico:49.90,Pro:89.90,Premium:149.90};
-    function preencherPlanoNovo(){
-      const p=document.getElementById('novoPlano'),v=document.getElementById('novoValor');
-      if(p&&v&&PRECOS_PLANOS[p.value]!==undefined)v.value=PRECOS_PLANOS[p.value].toFixed(2);
+    const PRECOS_PLANOS = {
+      Basico: 49.90,
+      Pro: 89.90,
+      Premium: 149.90
+    };
+
+    function valorPlano(nome) {
+      return Object.prototype.hasOwnProperty.call(PRECOS_PLANOS, nome)
+        ? PRECOS_PLANOS[nome].toFixed(2)
+        : '';
     }
-    function preencherPlanoExistente(select){
-      const form=select.closest('form'); if(!form)return;
-      const input=form.querySelector('.valor-input');
-      if(input&&PRECOS_PLANOS[select.value]!==undefined)input.value=PRECOS_PLANOS[select.value].toFixed(2);
+
+    function preencherPlanoNovo() {
+      const plano = document.getElementById('novoPlano');
+      const valor = document.getElementById('novoValor');
+      if (!plano || !valor) return;
+      const novoValor = valorPlano(plano.value);
+      if (novoValor !== '') valor.value = novoValor;
     }
+
+    function preencherPlanoExistente(select) {
+      const form = select.closest('form');
+      if (!form) return;
+      const input = form.querySelector('.valor-input');
+      if (!input) return;
+      const novoValor = valorPlano(select.value);
+      if (novoValor !== '') input.value = novoValor;
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      const novoPlano = document.getElementById('novoPlano');
+      if (novoPlano) {
+        novoPlano.addEventListener('change', preencherPlanoNovo);
+        novoPlano.addEventListener('input', preencherPlanoNovo);
+        preencherPlanoNovo();
+      }
+
+      document.querySelectorAll('.plano-select').forEach(function (select) {
+        select.addEventListener('change', function () {
+          preencherPlanoExistente(select);
+        });
+        select.addEventListener('input', function () {
+          preencherPlanoExistente(select);
+        });
+      });
+    });
     </script></body></html>"""
         return render_template_string(html, erro=erro)
 
@@ -738,11 +774,11 @@ def gestao_glppark():
     html = """<!doctype html><html lang="pt-BR"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><title>Gestão GLPPARK</title><style>
     body{background:#f4f5f7}.wrap{max-width:980px;margin:auto}.empresa-card{border:0;border-left:5px solid #d35400;border-radius:12px}.mini{font-size:.86rem}.empresa-email{overflow-wrap:anywhere}.status-box{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.dados-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.dado{background:#f8f9fa;border-radius:8px;padding:9px}.dado b{display:block;font-size:.78rem;color:#6c757d;margin-bottom:2px}.acoes-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.acoes-grid .full{grid-column:1/-1}@media(max-width:576px){.container{padding-left:12px;padding-right:12px}.topo h3{font-size:1.35rem}.dados-grid,.acoes-grid{grid-template-columns:1fr}.acoes-grid .full{grid-column:auto}.empresa-card{border-left-width:4px}.card-body{padding:14px}.form-label{font-size:.9rem;font-weight:600}}
     </style></head><body><div class="container py-3 wrap"><div class="topo d-flex justify-content-between align-items-center mb-3"><h3 class="mb-0">🚗 Gestão GLPPARK</h3><a href="/gestao-glppark/sair" class="btn btn-outline-danger btn-sm">Sair</a></div>{% if erro %}<div class="alert alert-danger">{{ erro }}</div>{% endif %}{% if sucesso %}<div class="alert alert-success">{{ sucesso }}</div>{% endif %}
-    <div class="card shadow-sm p-3 mb-3"><h5>Liberar nova empresa</h5><form method="post"><input type="hidden" name="acao" value="criar_empresa"><div class="row g-2"><div class="col-md-6"><label class="form-label">Empresa</label><input name="empresa" class="form-control" placeholder="Nome da empresa" required></div><div class="col-md-6"><label class="form-label">Administrador</label><input name="nome_usuario" class="form-control" placeholder="Nome do administrador" required></div><div class="col-md-6"><label class="form-label">E-mail</label><input name="email" type="email" class="form-control" placeholder="E-mail do administrador" required></div><div class="col-md-6"><label class="form-label">Senha inicial</label><input name="senha" type="password" minlength="6" class="form-control" placeholder="Mínimo 6 caracteres" required></div><div class="col-6 col-md-3"><label class="form-label">Plano</label><select name="plano" id="novoPlano" class="form-select" onchange="preencherPlanoNovo()"><option>Basico</option><option>Pro</option><option>Premium</option></select></div><div class="col-6 col-md-3"><label class="form-label">Mensalidade</label><input name="valor_mensal" id="novoValor" type="number" step=".01" min="0" class="form-control" value="49.90"></div><div class="col-12 col-md-3"><label class="form-label">Vencimento</label><input name="vencimento" type="date" class="form-control"></div><div class="col-12 col-md-3"><label class="form-label">Dias de teste</label><input name="dias_teste" type="number" min="0" value="0" class="form-control"></div></div><button class="btn btn-success w-100 mt-3">Liberar empresa</button></form></div>
+    <div class="card shadow-sm p-3 mb-3"><h5>Liberar nova empresa</h5><form method="post"><input type="hidden" name="acao" value="criar_empresa"><div class="row g-2"><div class="col-md-6"><label class="form-label">Empresa</label><input name="empresa" class="form-control" placeholder="Nome da empresa" required></div><div class="col-md-6"><label class="form-label">Administrador</label><input name="nome_usuario" class="form-control" placeholder="Nome do administrador" required></div><div class="col-md-6"><label class="form-label">E-mail</label><input name="email" type="email" class="form-control" placeholder="E-mail do administrador" required></div><div class="col-md-6"><label class="form-label">Senha inicial</label><input name="senha" type="password" minlength="6" class="form-control" placeholder="Mínimo 6 caracteres" required></div><div class="col-6 col-md-3"><label class="form-label">Plano</label><select name="plano" id="novoPlano" class="form-select"><option>Basico</option><option>Pro</option><option>Premium</option></select></div><div class="col-6 col-md-3"><label class="form-label">Mensalidade</label><input name="valor_mensal" id="novoValor" type="number" step=".01" min="0" class="form-control" value="49.90"></div><div class="col-12 col-md-3"><label class="form-label">Vencimento</label><input name="vencimento" type="date" class="form-control"></div><div class="col-12 col-md-3"><label class="form-label">Dias de teste</label><input name="dias_teste" type="number" min="0" value="0" class="form-control"></div></div><button class="btn btn-success w-100 mt-3">Liberar empresa</button></form></div>
     <h5 class="mb-2">Empresas cadastradas</h5>
     <div class="d-grid gap-3">{% for e in empresas %}{% set st=status_empresa(e) %}<div class="card empresa-card shadow-sm"><div class="card-body"><div class="d-flex justify-content-between gap-2 align-items-start mb-3"><div><h5 class="mb-1">{{e.nome}}{% if e.id==principal_id %} <span class="badge bg-dark">GLPPARK — Administrador Geral</span>{% endif %}</h5><div class="mini text-muted">{{e.admin_nome or 'Administrador não informado'}}</div><div class="mini text-muted empresa-email">{{e.email or ''}}</div></div><span class="badge {% if st in ['ATIVA','TESTE'] %}bg-success{% elif st=='VENCIDA' %}bg-warning text-dark{% else %}bg-danger{% endif %}">{{st}}</span></div>
     <div class="dados-grid mb-3"><div class="dado"><b>Plano atual</b>{{e.plano or 'Basico'}}</div><div class="dado"><b>Mensalidade</b>R$ {{'%.2f'|format(e.valor_mensal or 0)}}</div><div class="dado"><b>Vencimento</b>{{e.vencimento or 'Não definido'}}</div><div class="dado"><b>Limite de funcionários</b>{{e.limite_funcionarios or 3}}</div>{% if e.teste_ate %}<div class="dado"><b>Teste até</b>{{e.teste_ate}}</div>{% endif %}</div>
-    <form method="post" class="mb-2"><input type="hidden" name="acao" value="atualizar_empresa"><input type="hidden" name="empresa_id" value="{{e.id}}"><div class="row g-2"><div class="col-12 col-sm-4"><label class="form-label">Alterar plano</label><select name="plano" class="form-select plano-select" onchange="preencherPlanoExistente(this)"><option {% if e.plano=='Basico' %}selected{% endif %}>Basico</option><option {% if e.plano=='Pro' %}selected{% endif %}>Pro</option><option {% if e.plano=='Premium' %}selected{% endif %}>Premium</option></select></div><div class="col-12 col-sm-4"><label class="form-label">Valor mensal</label><input name="valor_mensal" type="number" step=".01" min="0" value="{{e.valor_mensal or 0}}" class="form-control valor-input"></div><div class="col-12 col-sm-4"><label class="form-label">Vencimento</label><input name="vencimento" type="date" value="{{e.vencimento or ''}}" class="form-control"></div></div><button class="btn btn-primary w-100 mt-2">Salvar plano e vencimento</button></form>
+    <form method="post" class="mb-2"><input type="hidden" name="acao" value="atualizar_empresa"><input type="hidden" name="empresa_id" value="{{e.id}}"><div class="row g-2"><div class="col-12 col-sm-4"><label class="form-label">Alterar plano</label><select name="plano" class="form-select plano-select"><option {% if e.plano=='Basico' %}selected{% endif %}>Basico</option><option {% if e.plano=='Pro' %}selected{% endif %}>Pro</option><option {% if e.plano=='Premium' %}selected{% endif %}>Premium</option></select></div><div class="col-12 col-sm-4"><label class="form-label">Valor mensal</label><input name="valor_mensal" type="number" step=".01" min="0" value="{{e.valor_mensal or 0}}" class="form-control valor-input"></div><div class="col-12 col-sm-4"><label class="form-label">Vencimento</label><input name="vencimento" type="date" value="{{e.vencimento or ''}}" class="form-control"></div></div><button class="btn btn-primary w-100 mt-2">Salvar plano e vencimento</button></form>
     {% if e.id==principal_id %}<div class="alert alert-secondary py-2 mb-0 text-center">Empresa principal protegida contra suspensão.</div>{% elif st=='SUSPENSA' %}<form method="post"><input type="hidden" name="acao" value="reativar_empresa"><input type="hidden" name="empresa_id" value="{{e.id}}"><button class="btn btn-success w-100">Reativar empresa</button></form>{% else %}<form method="post"><input type="hidden" name="acao" value="suspender_empresa"><input type="hidden" name="empresa_id" value="{{e.id}}"><button class="btn btn-outline-danger w-100">Suspender empresa</button></form>{% endif %}</div></div>{% else %}<div class="alert alert-secondary">Nenhuma empresa cadastrada.</div>{% endfor %}</div></div></body></html>"""
     return render_template_string(html, empresas=empresas, erro=erro, sucesso=sucesso, status_empresa=status_empresa, principal_id=principal_id)
 
