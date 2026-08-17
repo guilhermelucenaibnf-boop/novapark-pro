@@ -238,9 +238,12 @@ HTML_DASHBOARD = """
     </style>
 </head>
 <body class="bg-light">
-    <div style="background-color: #d35400; color: white; text-align: center; padding: 6px; font-size: 13px; font-weight: bold; display:flex; justify-content:center; align-items:center; gap:8px;">
-        {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="max-height:32px; max-width:110px; object-fit:contain; background:white; padding:2px; border-radius:3px;">{% endif %}
-        <span>{{ cfg.nome }} | <a href="/logout" class="text-white">Sair</a></span>
+    <div style="background-color: #d35400; color: white; padding: 6px 10px; font-size: 13px; font-weight: bold; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        <div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;">
+            {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="max-height:32px; max-width:110px; object-fit:contain; background:white; padding:2px; border-radius:3px; flex-shrink:0;">{% endif %}
+            <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ cfg.nome }} | <a href="/logout" class="text-white">Sair</a></span>
+        </div>
+        <span id="relogioGlppark" style="white-space:nowrap; flex-shrink:0; font-variant-numeric:tabular-nums;">🕐 --:--</span>
     </div>
     <div class="container mt-3">
         <div class="row mb-2">
@@ -524,6 +527,21 @@ HTML_DASHBOARD = """
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+    function atualizarRelogioGlppark() {
+        const el = document.getElementById('relogioGlppark');
+        if (!el) return;
+        const agora = new Date();
+        const hora = agora.toLocaleTimeString('pt-BR', {
+            timeZone: 'America/Sao_Paulo',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        });
+        el.textContent = '🕐 ' + hora;
+    }
+    atualizarRelogioGlppark();
+    setInterval(atualizarRelogioGlppark, 1000);
+
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
     window.addEventListener('load', function () {
         if (!navigator.onLine) return location.replace('/offline');
