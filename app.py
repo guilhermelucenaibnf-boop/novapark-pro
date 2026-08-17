@@ -180,7 +180,7 @@ HTML_LOGIN = """
             </div>
             <button type="submit" class="btn btn-primary w-100 mb-2">Entrar</button>
         </form>
-        <div class="text-center mt-3"><a href="/cadastro" class="text-decoration-none small fw-bold">Criar Cadastro Novo</a></div>
+        <div class="text-center mt-3"><a href="mailto:guilhermelucenaibnf@gmail.com?subject=Contrata%C3%A7%C3%A3o%20GLPPARK" class="text-decoration-none small fw-bold">Solicitar acesso ao GLPPARK</a></div>
         <div class="text-center mt-2"><a href="/politica-privacidade" class="text-decoration-none small text-secondary">Política de Privacidade</a></div>
     </div>
 </body>
@@ -590,29 +590,63 @@ def fazer_login():
 
 @app.route('/cadastro', methods=['GET', 'POST'])
 def cadastro():
-    if request.method == 'POST':
-        email = request.form.get('email')
-        senha = request.form.get('senha')
+    # Cadastro público desativado: novas empresas são criadas somente pela gestão GLPPARK.
+    return redirect(url_for('login'))
+
+@app.route('/gestao-glppark', methods=['GET', 'POST'])
+def gestao_glppark():
+    """Painel privado do proprietário do GLPPARK para liberar novas empresas."""
+    senha_mestra = os.environ.get('MASTER_PASSWORD', '').strip()
+    if not senha_mestra:
+        return "MASTER_PASSWORD ainda não foi configurada no servidor.", 503
+
+    erro = ''
+    sucesso = ''
+    if request.method == 'POST' and request.form.get('acao') == 'login':
+        if secrets.compare_digest(request.form.get('senha', ''), senha_mestra):
+            session['gestor_glppark'] = True
+            return redirect(url_for('gestao_glppark'))
+        erro = 'Senha de gestão incorreta.'
+
+    if not session.get('gestor_glppark'):
+        html = """<!doctype html><html lang="pt-BR"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><title>Gestão GLPPARK</title></head><body class="bg-light d-flex align-items-center justify-content-center vh-100"><div class="card shadow p-4" style="width:100%;max-width:420px"><h3 class="text-center mb-3">🔐 Gestão GLPPARK</h3>{% if erro %}<div class="alert alert-danger">{{ erro }}</div>{% endif %}<form method="post"><input type="hidden" name="acao" value="login"><label class="form-label">Senha mestra</label><input class="form-control mb-3" type="password" name="senha" required><button class="btn btn-dark w-100">Entrar</button></form><a class="btn btn-link mt-2" href="/">Voltar ao login</a></div></body></html>"""
+        return render_template_string(html, erro=erro)
+
+    if request.method == 'POST' and request.form.get('acao') == 'criar_empresa':
         empresa = request.form.get('empresa', '').strip()
-        nome_usuario = request.form.get('nome_usuario', '').strip()
-        try:
+        nome = request.form.get('nome_usuario', '').strip()
+        email = request.form.get('email', '').lower().strip()
+        senha = request.form.get('senha', '')
+        if not empresa or not nome or not email or len(senha) < 6:
+            erro = 'Preencha todos os campos. A senha inicial precisa ter pelo menos 6 caracteres.'
+        else:
             conn = obter_conexao()
-            codigo = secrets.token_hex(5)
-            if conn.pg:
-                empresa_id = conn.execute("INSERT INTO empresas (nome,codigo) VALUES (?,?) RETURNING id", (empresa, codigo)).fetchone()['id']
-            else:
-                cur = conn.execute("INSERT INTO empresas (nome,codigo) VALUES (?,?)", (empresa, codigo)); empresa_id = cur.lastrowid
-            conn.execute("INSERT INTO usuarios (empresa_id,nome,email,senha,perfil) VALUES (?,?,?,?,?)", (empresa_id, nome_usuario, email.lower().strip(), generate_password_hash(senha), 'admin'))
-            conn.execute("""INSERT INTO configuracoes (empresa_id,nome,cnpj,endereco,telefone,horario,mensagem,impressora_status,valor_diaria,valor_van,valor_pernoite,logo)
-                          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""", (empresa_id, empresa, '', '', '', '07:00-22:00', 'Seja Bem-Vindo!', 'Thermer Bluetooth', 50, 30, 40, ''))
-            conn.commit()
-            conn.close()
-            return redirect(url_for('login'))
-        except Exception as e:
-            try: conn.rollback(); conn.close()
-            except: pass
-            return "Não foi possível cadastrar. Verifique se o e-mail já existe. <a href='/cadastro'>Tentar novamente</a>"
-    return render_template_string(HTML_CADASTRO)
+            try:
+                codigo = secrets.token_hex(5)
+                if conn.pg:
+                    empresa_id = conn.execute("INSERT INTO empresas (nome,codigo) VALUES (?,?) RETURNING id", (empresa, codigo)).fetchone()['id']
+                else:
+                    empresa_id = conn.execute("INSERT INTO empresas (nome,codigo) VALUES (?,?)", (empresa, codigo)).lastrowid
+                conn.execute("INSERT INTO usuarios (empresa_id,nome,email,senha,perfil) VALUES (?,?,?,?,?)", (empresa_id, nome, email, generate_password_hash(senha), 'admin'))
+                conn.execute("""INSERT INTO configuracoes (empresa_id,nome,cnpj,endereco,telefone,horario,mensagem,impressora_status,valor_diaria,valor_van,valor_pernoite,logo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""", (empresa_id, empresa, '', '', '', '07:00-22:00', 'Seja Bem-Vindo!', 'Thermer Bluetooth', 50, 30, 40, ''))
+                conn.commit()
+                sucesso = f'Empresa {empresa} liberada com sucesso.'
+            except Exception:
+                conn.rollback()
+                erro = 'Não foi possível criar a empresa. Verifique se o e-mail já está cadastrado.'
+            finally:
+                conn.close()
+
+    conn = obter_conexao()
+    empresas = conn.execute("SELECT e.id,e.nome,e.codigo,e.ativo,u.nome AS admin_nome,u.email FROM empresas e LEFT JOIN usuarios u ON u.empresa_id=e.id AND u.perfil='admin' ORDER BY e.id DESC").fetchall()
+    conn.close()
+    html = """<!doctype html><html lang="pt-BR"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><title>Gestão GLPPARK</title></head><body class="bg-light"><div class="container py-3" style="max-width:850px"><div class="d-flex justify-content-between align-items-center mb-3"><h3>🚗 Gestão GLPPARK</h3><a href="/gestao-glppark/sair" class="btn btn-outline-danger btn-sm">Sair</a></div>{% if erro %}<div class="alert alert-danger">{{ erro }}</div>{% endif %}{% if sucesso %}<div class="alert alert-success">{{ sucesso }}</div>{% endif %}<div class="card shadow-sm p-3 mb-3"><h5>Liberar nova empresa</h5><form method="post"><input type="hidden" name="acao" value="criar_empresa"><div class="row g-2"><div class="col-md-6"><input name="empresa" class="form-control" placeholder="Nome da empresa" required></div><div class="col-md-6"><input name="nome_usuario" class="form-control" placeholder="Nome do administrador" required></div><div class="col-md-6"><input name="email" type="email" class="form-control" placeholder="E-mail do administrador" required></div><div class="col-md-6"><input name="senha" type="password" minlength="6" class="form-control" placeholder="Senha inicial (mín. 6)" required></div></div><button class="btn btn-success w-100 mt-2">Liberar empresa</button></form></div><div class="card shadow-sm p-3"><h5>Empresas cadastradas</h5><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Empresa</th><th>Administrador</th><th>E-mail</th><th>Status</th></tr></thead><tbody>{% for e in empresas %}<tr><td>{{e.nome}}</td><td>{{e.admin_nome or '-'}}</td><td>{{e.email or '-'}}</td><td>{% if e.ativo %}<span class="badge bg-success">Ativa</span>{% else %}<span class="badge bg-secondary">Inativa</span>{% endif %}</td></tr>{% else %}<tr><td colspan="4">Nenhuma empresa cadastrada.</td></tr>{% endfor %}</tbody></table></div></div></div></body></html>"""
+    return render_template_string(html, empresas=empresas, erro=erro, sucesso=sucesso)
+
+@app.route('/gestao-glppark/sair')
+def sair_gestao_glppark():
+    session.pop('gestor_glppark', None)
+    return redirect(url_for('gestao_glppark'))
 
 @app.route('/dashboard')
 def dashboard():
