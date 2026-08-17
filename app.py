@@ -759,17 +759,38 @@ def gestao_glppark():
             elif eid == principal_id_check:
                 erro = 'A Empresa principal do GLPPARK é protegida e não pode usar esta ação de teste.'
             elif request.form.get('acao') == 'gerar_funcionarios_teste':
+                plano_atual = emp['plano'] or 'Basico'
                 limite = int(emp['limite_funcionarios'] or 3)
-                alvo = min(limite, 20) if (emp['plano'] or 'Basico') == 'Premium' else limite
-                existentes = conn.execute("SELECT COUNT(*) AS total FROM usuarios WHERE empresa_id=? AND perfil='funcionario'", (eid,)).fetchone()['total']
-                criados = 0
-                for n in range(existentes + 1, alvo + 1):
+
+                # Recomeça o teste desta empresa para o resultado ficar sempre visível e previsível.
+                conn.execute(
+                    "DELETE FROM usuarios WHERE empresa_id=? AND perfil='funcionario' AND email LIKE ?",
+                    (eid, '%@glppark.local')
+                )
+
+                if plano_atual == 'Premium':
+                    alvo = 15
+                    limite_texto = 'ilimitado'
+                elif plano_atual == 'Pro':
+                    alvo = 10
+                    limite_texto = '10'
+                else:
+                    alvo = 3
+                    limite_texto = '3'
+
+                for n in range(1, alvo + 1):
                     token = secrets.token_hex(3)
                     email = f'func-{eid}-{token}@glppark.local'
-                    conn.execute("INSERT INTO usuarios(empresa_id,nome,email,senha,perfil) VALUES(?,?,?,?,?)", (eid,f'Funcionário Teste {n}',email,generate_password_hash('Teste@123'),'funcionario'))
-                    criados += 1
+                    conn.execute(
+                        "INSERT INTO usuarios(empresa_id,nome,email,senha,perfil) VALUES(?,?,?,?,?)",
+                        (eid, f'Funcionário Teste {n}', email, generate_password_hash('Teste@123'), 'funcionario')
+                    )
+
                 conn.commit()
-                sucesso = f'{criados} funcionário(s) de teste criado(s). O limite do plano é {"ilimitado" if (emp["plano"] or "") == "Premium" else limite}.'
+                if plano_atual == 'Premium':
+                    sucesso = f'{alvo} funcionário(s) de teste criado(s). O plano Premium permanece ilimitado.'
+                else:
+                    sucesso = f'{alvo} funcionário(s) de teste criado(s). O limite do plano é {limite_texto}.'
             elif request.form.get('acao') == 'simular_vencimento':
                 ontem = (agora_brasilia().date() - timedelta(days=1)).isoformat()
                 conn.execute("UPDATE empresas SET teste_ate=NULL,vencimento=?,ativo=1,status_assinatura='ATIVA' WHERE id=?", (ontem,eid))
