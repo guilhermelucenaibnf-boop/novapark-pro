@@ -33,7 +33,7 @@ class Conexao:
         else:
             self.raw = sqlite3.connect('estacionamento.db')
             self.raw.row_factory = sqlite3.Row
-            def execute(self, sql, params=()):
+    def execute(self, sql, params=()):
         if self.pg:
             sql = sql.replace('?', '%s')
 
