@@ -33,29 +33,33 @@ class Conexao:
         else:
             self.raw = sqlite3.connect('estacionamento.db')
             self.raw.row_factory = sqlite3.Row
-    def execute(self, sql, params=()):
-    if self.pg:
-        sql = sql.replace('?', '%s')
+      def execute(self, sql, params=()):
+        if self.pg:
+            sql = sql.replace('?', '%s')
 
-        if isinstance(params, dict):
-            for chave in params:
-                sql = sql.replace(':' + chave, '%(' + chave + ')s')
+            if isinstance(params, dict):
+                for chave in params:
+                    sql = sql.replace(':' + chave, '%(' + chave + ')s')
 
-        # No psycopg2, não passar params quando não existem parâmetros.
-        # Isso evita erro com LIKE contendo % no próprio SQL.
-        cur = self.raw.cursor()
+            cur = self.raw.cursor()
 
-        if params:
-            cur.execute(sql, params)
-        else:
-            cur.execute(sql)
+            if params:
+                cur.execute(sql, params)
+            else:
+                cur.execute(sql)
 
-        return cur
+            return cur
 
-    return self.raw.execute(sql, params)
-    def commit(self): self.raw.commit()
-    def rollback(self): self.raw.rollback()
-    def close(self): self.raw.close()
+        return self.raw.execute(sql, params)
+
+    def commit(self):
+        self.raw.commit()
+
+    def rollback(self):
+        self.raw.rollback()
+
+    def close(self):
+        self.raw.close()  
 
 def obter_conexao(): return Conexao()
 
