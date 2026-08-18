@@ -7,7 +7,8 @@ import json
 import math
 import csv
 import io
-from datetime import datetime
+from datetime import datetime, timedelta, date
+from zoneinfo import ZoneInfo
 from flask import Flask, render_template_string, request, redirect, url_for, session
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -21,6 +22,16 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "troque-esta-chave-no-render")
 UPLOAD_FOLDER = 'static/uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+FUSO_BRASIL = ZoneInfo("America/Sao_Paulo")
+
+def agora_brasilia():
+    """Retorna o horário atual oficial de Brasília."""
+    return datetime.now(FUSO_BRASIL)
+
+def agora_banco():
+    """Retorna o horário de Brasília no formato usado pelo banco."""
+    return agora_brasilia().strftime('%Y-%m-%d %H:%M:%S')
 
 class Conexao:
     def __init__(self):
@@ -36,37 +47,20 @@ class Conexao:
     def execute(self, sql, params=()):
         if self.pg:
             sql = sql.replace('?', '%s')
-
             if isinstance(params, dict):
-                for chave in params:
-                    sql = sql.replace(':' + chave, '%(' + chave + ')s')
-
-            cur = self.raw.cursor()
-
-            if params:
-                cur.execute(sql, params)
-            else:
-                cur.execute(sql)
-
-            return cur
-
+                for chave in params: sql = sql.replace(':' + chave, '%(' + chave + ')s')
+            cur = self.raw.cursor(); cur.execute(sql, params); return cur
         return self.raw.execute(sql, params)
-
-    def commit(self):
-        self.raw.commit()
-
-    def rollback(self):
-        self.raw.rollback()
-
-    def close(self):
-        self.raw.close()
+    def commit(self): self.raw.commit()
+    def rollback(self): self.raw.rollback()
+    def close(self): self.raw.close()
 
 def obter_conexao(): return Conexao()
 
 def inicializar_banco():
     conn = obter_conexao()
     auto = 'SERIAL PRIMARY KEY' if conn.pg else 'INTEGER PRIMARY KEY AUTOINCREMENT'
-    conn.execute(f'''CREATE TABLE IF NOT EXISTS empresas (id {auto}, nome TEXT NOT NULL, codigo TEXT UNIQUE NOT NULL, ativo INTEGER DEFAULT 1)''')
+    conn.execute(f'''CREATE TABLE IF NOT EXISTS empresas (id {auto}, nome TEXT NOT NULL, codigo TEXT UNIQUE NOT NULL, ativo INTEGER DEFAULT 1, plano TEXT DEFAULT 'Basico', valor_mensal REAL DEFAULT 0, vencimento TEXT, status_assinatura TEXT DEFAULT 'ATIVA', limite_funcionarios INTEGER DEFAULT 3, teste_ate TEXT, principal INTEGER DEFAULT 0)''')
     conn.execute(f'''CREATE TABLE IF NOT EXISTS usuarios (id {auto}, empresa_id INTEGER NOT NULL, nome TEXT, email TEXT UNIQUE NOT NULL, senha TEXT NOT NULL, perfil TEXT DEFAULT 'funcionario')''')
     conn.execute(f'''CREATE TABLE IF NOT EXISTS configuracoes (id {auto}, empresa_id INTEGER UNIQUE NOT NULL, nome TEXT, cnpj TEXT, endereco TEXT, telefone TEXT, horario TEXT, mensagem TEXT, impressora_status TEXT, valor_diaria REAL DEFAULT 50, valor_van REAL DEFAULT 30, valor_pernoite REAL DEFAULT 40, valor_hora REAL DEFAULT 10, valor_fracao REAL DEFAULT 5, minutos_fracao INTEGER DEFAULT 30, taxa_talao REAL DEFAULT 30, total_vagas INTEGER DEFAULT 50, logo TEXT)''')
     conn.execute(f'''CREATE TABLE IF NOT EXISTS anuncios (id {auto}, empresa_id INTEGER NOT NULL, texto TEXT)''')
@@ -77,6 +71,10 @@ def inicializar_banco():
     conn.execute(f'''CREATE TABLE IF NOT EXISTS auditoria (id {auto}, empresa_id INTEGER NOT NULL, usuario_id INTEGER, acao TEXT, detalhes TEXT, criado_em TEXT)''')
     # Migra automaticamente a versão antiga, preservando os dados existentes.
     tabelas_colunas = {
+        'empresas': [
+            ('plano',"TEXT DEFAULT 'Basico'"),('valor_mensal','REAL DEFAULT 0'),('vencimento','TEXT'),
+            ('status_assinatura',"TEXT DEFAULT 'ATIVA'"),('limite_funcionarios','INTEGER DEFAULT 3'),('teste_ate','TEXT'),('principal','INTEGER DEFAULT 0')
+        ],
         'usuarios': [('empresa_id','INTEGER'),('nome','TEXT'),('email','TEXT'),('senha','TEXT'),('perfil',"TEXT DEFAULT 'funcionario'")],
         'configuracoes': [
             ('empresa_id','INTEGER'),('nome',"TEXT DEFAULT 'GLPPARK'"),('cnpj','TEXT'),('endereco','TEXT'),
@@ -102,21 +100,41 @@ def inicializar_banco():
             existentes = {r[1] for r in conn.execute(f'PRAGMA table_info({tabela})').fetchall()}
             for coluna, tipo in colunas:
                 if coluna not in existentes: conn.execute(f'ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}')
+    # Garante uma empresa administrativa GLPPARK fixa e independente da ordem dos IDs.
+    principal = conn.execute("SELECT id FROM empresas WHERE COALESCE(principal,0)=1 ORDER BY id LIMIT 1").fetchone()
+    if not principal:
+        por_codigo = conn.execute("SELECT id FROM empresas WHERE codigo=? LIMIT 1", ('glppark-principal',)).fetchone()
+        if por_codigo:
+            principal_id = por_codigo['id']
+            conn.execute("UPDATE empresas SET principal=1,ativo=1,status_assinatura='ATIVA',plano='Premium',valor_mensal=0,limite_funcionarios=999 WHERE id=?", (principal_id,))
+        elif conn.pg:
+            principal_id = conn.execute("INSERT INTO empresas(nome,codigo,ativo,plano,valor_mensal,status_assinatura,limite_funcionarios,principal) VALUES (?,?,?,?,?,?,?,1) RETURNING id", ('GLPPARK — Administração', 'glppark-principal', 1, 'Premium', 0, 'ATIVA', 999)).fetchone()['id']
+        else:
+            principal_id = conn.execute("INSERT INTO empresas(nome,codigo,ativo,plano,valor_mensal,status_assinatura,limite_funcionarios,principal) VALUES (?,?,?,?,?,?,?,1)", ('GLPPARK — Administração', 'glppark-principal', 1, 'Premium', 0, 'ATIVA', 999)).lastrowid
+    else:
+        principal_id = principal['id']
+
+    # Evita que qualquer empresa cliente/teste vire Administrador Geral por engano.
+    conn.execute("UPDATE empresas SET principal=0 WHERE id<>? AND COALESCE(principal,0)<>0", (principal_id,))
+    conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_empresa_principal_unica ON empresas(principal) WHERE principal=1')
+
+    cfg_principal = conn.execute("SELECT id FROM configuracoes WHERE empresa_id=?", (principal_id,)).fetchone()
+    if not cfg_principal:
+        conn.execute("""INSERT INTO configuracoes (empresa_id,nome,cnpj,endereco,telefone,horario,mensagem,impressora_status,valor_diaria,valor_van,valor_pernoite,logo)
+                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""", (principal_id,'GLPPARK','','','','07:00-22:00','Administração Geral GLPPARK','Thermer Bluetooth',50,30,40,''))
+
     legado = conn.execute('SELECT COUNT(*) AS total FROM configuracoes WHERE empresa_id IS NULL').fetchone()
     total_legado = legado['total'] if hasattr(legado, 'keys') else legado[0]
     if total_legado:
-        primeira = conn.execute('SELECT id FROM empresas ORDER BY id LIMIT 1').fetchone()
-        if primeira:
-            empresa_legada = primeira['id']
-        elif conn.pg:
-            empresa_legada = conn.execute("INSERT INTO empresas(nome,codigo) VALUES (?,?) RETURNING id", ('Empresa principal', secrets.token_hex(5))).fetchone()['id']
-        else:
-            empresa_legada = conn.execute("INSERT INTO empresas(nome,codigo) VALUES (?,?)", ('Empresa principal', secrets.token_hex(5))).lastrowid
+        empresa_legada = principal_id
         for tabela in ('usuarios','configuracoes','anuncios','veiculos'):
             conn.execute(f'UPDATE {tabela} SET empresa_id=? WHERE empresa_id IS NULL', (empresa_legada,))
         conn.execute("UPDATE usuarios SET perfil='admin' WHERE empresa_id=?", (empresa_legada,))
     # Remove somente o nome antigo usado no protótipo; os demais nomes são preservados.
-    conn.execute("UPDATE configuracoes SET nome='GLPPARK' WHERE LOWER(COALESCE(nome,'')) LIKE '%manfrenate%'")
+    conn.execute(
+        "UPDATE configuracoes SET nome='GLPPARK' WHERE LOWER(COALESCE(nome,'')) LIKE ?",
+        ('%manfrenate%',)
+    )
     conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_offline_empresa ON veiculos(empresa_id, offline_id)')
     conn.commit()
     conn.close()
@@ -147,10 +165,79 @@ def get_dados():
     return cfg, anuncios, ativos, concluidos, num_talao
 
 def registrar_auditoria(conn, acao, detalhes=''):
-    conn.execute("INSERT INTO auditoria(empresa_id,usuario_id,acao,detalhes,criado_em) VALUES(?,?,?,?,?)", (session['empresa_id'], session.get('usuario_id'), acao, detalhes, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+    conn.execute("INSERT INTO auditoria(empresa_id,usuario_id,acao,detalhes,criado_em) VALUES(?,?,?,?,?)", (session['empresa_id'], session.get('usuario_id'), acao, detalhes, agora_banco()))
 
 def obter_caixa_aberto(conn):
     return conn.execute("SELECT * FROM caixas WHERE empresa_id=? AND status='ABERTO' ORDER BY id DESC LIMIT 1", (session['empresa_id'],)).fetchone()
+
+PLANOS_GLPPARK = {
+    'Basico': {
+        'limite_funcionarios': 3,
+        'valor_sugerido': 49.90,
+        'recursos': {'entrada','saida','patio','config','caixa'}
+    },
+    'Pro': {
+        'limite_funcionarios': 10,
+        'valor_sugerido': 89.90,
+        'recursos': {'entrada','saida','patio','config','caixa','estatisticas','mensalistas','relatorios'}
+    },
+    'Premium': {
+        'limite_funcionarios': 999,
+        'valor_sugerido': 149.90,
+        'recursos': {'entrada','saida','patio','config','caixa','estatisticas','mensalistas','relatorios','financeiro','anuncios'}
+    },
+}
+
+def recurso_liberado(recurso, plano=None):
+    plano = plano or session.get('plano', 'Basico')
+    dados = PLANOS_GLPPARK.get(plano, PLANOS_GLPPARK['Basico'])
+    return recurso in dados['recursos']
+
+def exigir_recurso(recurso):
+    if not recurso_liberado(recurso):
+        plano = session.get('plano', 'Basico')
+        return f"<h3>Recurso não disponível no plano {plano}.</h3><p>Altere o plano na Gestão GLPPARK para liberar esta função.</p><a href='/dashboard'>Voltar</a>", 403
+    return None
+
+def status_empresa(emp):
+    """Retorna ATIVA, TESTE, VENCIDA ou SUSPENSA sem apagar dados da empresa.
+
+    Prioridade:
+    1. SUSPENSA
+    2. VENCIDA
+    3. TESTE
+    4. ATIVA
+    """
+    if not emp:
+        return 'SUSPENSA'
+
+    if int(emp['ativo'] or 0) != 1 or str(emp['status_assinatura'] or '').upper() == 'SUSPENSA':
+        return 'SUSPENSA'
+
+    hoje = agora_brasilia().date()
+
+    vencimento = (emp['vencimento'] or '').strip()
+    if vencimento:
+        try:
+            data_vencimento = datetime.strptime(vencimento, '%Y-%m-%d').date()
+            if hoje > data_vencimento:
+                return 'VENCIDA'
+        except ValueError:
+            pass
+
+    teste_ate = (emp['teste_ate'] or '').strip()
+    if teste_ate:
+        try:
+            data_teste = datetime.strptime(teste_ate, '%Y-%m-%d').date()
+            if hoje <= data_teste:
+                return 'TESTE'
+        except ValueError:
+            pass
+
+    return 'ATIVA'
+
+def acesso_empresa_liberado(emp):
+    return status_empresa(emp) in ('ATIVA', 'TESTE')
 
 def calcular_cobranca(v, cfg, minutos, talao_perdido=False, desconto=0):
     if minutos <= 15 or v['tipo_tarifa'] == 'mensalista':
@@ -186,7 +273,7 @@ HTML_LOGIN = """
             </div>
             <button type="submit" class="btn btn-primary w-100 mb-2">Entrar</button>
         </form>
-        <div class="text-center mt-3"><a href="mailto:guilhermelucenaibnf@gmail.com?subject=Solicitar%20acesso%20ao%20GLPPARK" class="text-decoration-none small fw-bold">Solicitar acesso ao GLPPARK</a></div>
+        <div class="text-center mt-3"><a href="mailto:guilhermelucenaibnf@gmail.com?subject=Contrata%C3%A7%C3%A3o%20GLPPARK" class="text-decoration-none small fw-bold">Solicitar acesso ao GLPPARK</a></div>
         <div class="text-center mt-2"><a href="/politica-privacidade" class="text-decoration-none small text-secondary">Política de Privacidade</a></div>
     </div>
 </body>
@@ -244,11 +331,20 @@ HTML_DASHBOARD = """
     </style>
 </head>
 <body class="bg-light">
-    <div style="background-color: #d35400; color: white; text-align: center; padding: 6px; font-size: 13px; font-weight: bold; display:flex; justify-content:center; align-items:center; gap:8px;">
-        {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="max-height:32px; max-width:110px; object-fit:contain; background:white; padding:2px; border-radius:3px;">{% endif %}
-        <span>{{ cfg.nome }} | <a href="/logout" class="text-white">Sair</a></span>
+    <div style="background-color: #d35400; color: white; padding: 6px 10px; font-size: 13px; font-weight: bold; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        <div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;">
+            {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="max-height:32px; max-width:110px; object-fit:contain; background:white; padding:2px; border-radius:3px; flex-shrink:0;">{% endif %}
+            <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ cfg.nome }} | <a href="/logout" class="text-white">Sair</a></span>
+        </div>
+        <span id="relogioGlppark" style="white-space:nowrap; flex-shrink:0; font-variant-numeric:tabular-nums;">🕐 --:--</span>
     </div>
     <div class="container mt-3">
+        <div class="alert alert-light border py-2 px-3 mb-2 d-flex justify-content-between align-items-center flex-wrap gap-1" style="font-size:12px;">
+            <span><strong>Plano:</strong> {{ session.plano|default('Basico') }}</span>
+            <span><strong>Status:</strong> {{ session.status_assinatura|default('ATIVA') }}</span>
+            {% if empresa_vencimento %}<span><strong>Vencimento:</strong> {{ empresa_vencimento }}</span>{% endif %}
+        </div>
+        {% if aviso_vencimento %}<div class="alert alert-warning py-2 small">{{ aviso_vencimento }}</div>{% endif %}
         <div class="row mb-2">
             <div class="col-6"><div class="card text-center p-2 fw-bold text-secondary bg-white border" style="font-size: 12px;">Livres: <span class="text-dark">{{ [cfg.total_vagas - (ativos|length), 0]|max }}</span>/{{ cfg.total_vagas }} | Talão: <span class="text-danger">Nº {{ talao_atual }}</span></div></div>
             <div class="col-6"><div class="card text-center p-2 fw-bold text-white bg-dark" style="font-size: 12px;">Ativos: {{ ativos|length }} | Saídas: {{ concluidos|length }}</div></div>
@@ -258,13 +354,13 @@ HTML_DASHBOARD = """
             <div class="col-6"><button class="btn-grid bg-danger" data-bs-toggle="modal" data-bs-target="#mSaida">📤 SAÍDA & SCANNER</button></div>
             <div class="col-6"><button class="btn-grid bg-secondary" data-bs-toggle="modal" data-bs-target="#mPatio">🅿️ PÁTIO</button></div>
             {% if session.perfil == 'admin' %}
-            <div class="col-6"><button class="btn-grid" style="background-color: #34495e;" data-bs-toggle="modal" data-bs-target="#mConfig">⚙️ CONFIG</button></div>
-            <div class="col-6"><button class="btn-grid" style="background-color: #e67e22;" data-bs-toggle="modal" data-bs-target="#mCaixa">📦 CAIXA</button></div>
-            <div class="col-6"><button class="btn-grid" style="background-color: #8e44ad;" data-bs-toggle="modal" data-bs-target="#mEstatisticas">📊 ESTATÍSTICAS</button></div>
-            <div class="col-12"><button class="btn-grid bg-primary" data-bs-toggle="modal" data-bs-target="#mAnuncios">📢 ANÚNCIOS</button></div>
-            <div class="col-6"><button class="btn-grid bg-success" onclick="location.href='/mensalistas'">👤 MENSALISTAS</button></div>
-            <div class="col-6"><button class="btn-grid bg-dark" onclick="location.href='/financeiro'">💰 FINANCEIRO</button></div>
-            <div class="col-12"><button class="btn-grid" style="background:#0d6efd" onclick="location.href='/relatorios'">📄 RELATÓRIOS</button></div>
+            {% if recurso_liberado('config') %}<div class="col-6"><button class="btn-grid" style="background-color: #34495e;" data-bs-toggle="modal" data-bs-target="#mConfig">⚙️ CONFIG</button></div>{% endif %}
+            {% if recurso_liberado('caixa') %}<div class="col-6"><button class="btn-grid" style="background-color: #e67e22;" data-bs-toggle="modal" data-bs-target="#mCaixa">📦 CAIXA</button></div>{% endif %}
+            {% if recurso_liberado('estatisticas') %}<div class="col-6"><button class="btn-grid" style="background-color: #8e44ad;" data-bs-toggle="modal" data-bs-target="#mEstatisticas">📊 ESTATÍSTICAS</button></div>{% endif %}
+            {% if recurso_liberado('anuncios') %}<div class="col-12"><button class="btn-grid bg-primary" data-bs-toggle="modal" data-bs-target="#mAnuncios">📢 ANÚNCIOS</button></div>{% endif %}
+            {% if recurso_liberado('mensalistas') %}<div class="col-6"><button class="btn-grid bg-success" onclick="location.href='/mensalistas'">👤 MENSALISTAS</button></div>{% endif %}
+            {% if recurso_liberado('financeiro') %}<div class="col-6"><button class="btn-grid bg-dark" onclick="location.href='/financeiro'">💰 FINANCEIRO</button></div>{% endif %}
+            {% if recurso_liberado('relatorios') %}<div class="col-12"><button class="btn-grid" style="background:#0d6efd" onclick="location.href='/relatorios'">📄 RELATÓRIOS</button></div>{% endif %}
             {% endif %}
         </div>
     </div>
@@ -363,7 +459,7 @@ HTML_DASHBOARD = """
                     window.print();
                 });
             </script>
-            <a href="/dashboard" class="btn btn-success w-100 mt-2">OK / Concluir</a>
+            <button type="button" class="btn btn-success w-100 mt-2" onclick="window.location.replace('/dashboard')">OK / Concluir</button>
         </div></div></div>
     </div>
     {% endif %}
@@ -402,7 +498,7 @@ HTML_DASHBOARD = """
                     window.print();
                 });
             </script>
-            <a href="/dashboard" class="btn btn-primary w-100 mt-2">OK / Concluir</a>
+            <button type="button" class="btn btn-primary w-100 mt-2" onclick="window.location.replace('/dashboard')">OK / Concluir</button>
         </div></div></div>
     </div>
     {% endif %}
@@ -434,7 +530,7 @@ HTML_DASHBOARD = """
                 console.log("Câmera indisponível.");
             }
         </script>
-        <a href="/dashboard" class="btn btn-secondary w-100 mt-3">Fechar</a>
+        <button type="button" class="btn btn-secondary w-100 mt-3" data-bs-dismiss="modal">Fechar</button>
     </div></div></div></div>
 
     <!-- MODAL PÁTIO -->
@@ -453,7 +549,7 @@ HTML_DASHBOARD = """
             <a href="/reimprimir/{{ c.id }}" class="btn btn-info btn-sm w-100 text-white fw-bold">🖨️ Ver / Imprimir Comprovante QR Code</a>
         </div>
         {% else %}<p class="text-muted">Pátio vazio.</p>{% endfor %}
-        <a href="/dashboard" class="btn btn-secondary w-100 mt-3">Fechar</a>
+        <button type="button" class="btn btn-secondary w-100 mt-3" data-bs-dismiss="modal">Fechar</button>
     </div></div></div></div>
 
     <!-- MODAL CAIXA -->
@@ -464,7 +560,7 @@ HTML_DASHBOARD = """
             <tr><td>{{ c.placa }}</td><td>{{ c.hora_entrada }}</td><td>{{ c.hora_saida }}</td><td>R$ {{ "%.2f"|format(c.valor_total if c.valor_total else c.valor) }}</td></tr>
             {% else %}<tr><td colspan="4" class="text-center text-muted">Nenhum registro no caixa.</td></tr>{% endfor %}
         </tbody></table>
-        <a href="/dashboard" class="btn btn-secondary w-100 mt-3">Fechar</a>
+        <button type="button" class="btn btn-secondary w-100 mt-3" data-bs-dismiss="modal">Fechar</button>
     </div></div></div></div>
 
     <!-- MODAL ESTATÍSTICAS -->
@@ -474,7 +570,7 @@ HTML_DASHBOARD = """
         <p>Talão Atual: <strong>Nº {{ talao_atual }}</strong></p>
         <p>Total de Veículos Ativos: <strong>{{ ativos|length }}</strong></p>
         <p>Total de Veículos Finalizados: <strong>{{ concluidos|length }}</strong></p>
-        <a href="/dashboard" class="btn btn-secondary w-100 mt-3">Fechar</a>
+        <button type="button" class="btn btn-secondary w-100 mt-3" data-bs-dismiss="modal">Fechar</button>
     </div></div></div></div>
 
     <!-- MODAL CONFIG -->
@@ -509,7 +605,7 @@ HTML_DASHBOARD = """
             <button class="btn btn-dark w-100 mb-2">Salvar Configurações</button>
         </form>
         {% if session.perfil == 'admin' %}<a href="/funcionarios" class="btn btn-primary w-100 mb-2">👥 Gerenciar Funcionários</a>{% endif %}
-        <a href="/dashboard" class="btn btn-secondary w-100">Fechar</a>
+        <button type="button" class="btn btn-secondary w-100" data-bs-dismiss="modal">Fechar</button>
     </div></div></div></div>
 
     <!-- MODAL ANÚNCIOS -->
@@ -525,11 +621,26 @@ HTML_DASHBOARD = """
             <a href="/del_anuncio/{{ a.id }}" class="btn btn-danger btn-sm px-3">Excluir</a>
         </div>
         {% else %}<p class="text-muted small">Nenhum anúncio cadastrado.</p>{% endfor %}
-        <a href="/dashboard" class="btn btn-secondary w-100 mt-3">Fechar</a>
+        <button type="button" class="btn btn-secondary w-100 mt-3" data-bs-dismiss="modal">Fechar</button>
     </div></div></div></div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+    function atualizarRelogioGlppark() {
+        const el = document.getElementById('relogioGlppark');
+        if (!el) return;
+        const agora = new Date();
+        const hora = agora.toLocaleTimeString('pt-BR', {
+            timeZone: 'America/Sao_Paulo',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        });
+        el.textContent = '🕐 ' + hora;
+    }
+    atualizarRelogioGlppark();
+    setInterval(atualizarRelogioGlppark, 1000);
+
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
     window.addEventListener('load', function () {
         if (!navigator.onLine) return location.replace('/offline');
@@ -566,48 +677,306 @@ def fazer_login():
     senha = request.form.get('senha')
     conn = obter_conexao()
     user = conn.execute("SELECT * FROM usuarios WHERE email = ?", (email,)).fetchone()
+    emp = conn.execute("SELECT * FROM empresas WHERE id=?", (user['empresa_id'],)).fetchone() if user else None
     conn.close()
     senha_ok = user and (check_password_hash(user['senha'], senha) if user['senha'].startswith(('pbkdf2:', 'scrypt:')) else user['senha'] == senha)
     if senha_ok:
+        situacao = status_empresa(emp)
+        if not acesso_empresa_liberado(emp):
+            mensagem = 'Assinatura vencida. Entre em contato com a administração do GLPPARK.' if situacao == 'VENCIDA' else 'Empresa suspensa. Entre em contato com a administração do GLPPARK.'
+            return f"<h3>{mensagem}</h3><a href='/'>Voltar ao login</a>", 403
         session['email'] = email
         session['usuario_id'] = user['id']
         session['empresa_id'] = user['empresa_id']
         session['perfil'] = user['perfil']
+        session['plano'] = emp['plano'] or 'Basico'
+        session['status_assinatura'] = situacao
         return redirect(url_for('dashboard'))
     return f"Login incorreto. <a href='/'>Voltar</a>"
 
 @app.route('/cadastro', methods=['GET', 'POST'])
 def cadastro():
-    if request.method == 'POST':
-        email = request.form.get('email')
-        senha = request.form.get('senha')
+    # Cadastro público desativado: novas empresas são criadas somente pela gestão GLPPARK.
+    return redirect(url_for('login'))
+
+@app.route('/gestao-glppark', methods=['GET', 'POST'])
+def gestao_glppark():
+    """Painel privado do proprietário do GLPPARK para liberar novas empresas."""
+    senha_mestra = os.environ.get('MASTER_PASSWORD', '').strip()
+    if not senha_mestra:
+        return "MASTER_PASSWORD ainda não foi configurada no servidor.", 503
+
+    erro = ''
+    sucesso = ''
+    if request.method == 'POST' and request.form.get('acao') == 'login':
+        if secrets.compare_digest(request.form.get('senha', ''), senha_mestra):
+            session['gestor_glppark'] = True
+            return redirect(url_for('gestao_glppark'))
+        erro = 'Senha de gestão incorreta.'
+
+    if not session.get('gestor_glppark'):
+        html = """<!doctype html><html lang="pt-BR"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><title>Gestão GLPPARK</title></head><body class="bg-light d-flex align-items-center justify-content-center vh-100"><div class="card shadow p-4" style="width:100%;max-width:420px"><h3 class="text-center mb-3">🔐 Gestão GLPPARK</h3>{% if erro %}<div class="alert alert-danger">{{ erro }}</div>{% endif %}<form method="post"><input type="hidden" name="acao" value="login"><label class="form-label">Senha mestra</label><input class="form-control mb-3" type="password" name="senha" required><button class="btn btn-dark w-100">Entrar</button></form><a class="btn btn-link mt-2" href="/">Voltar ao login</a></div></body></html>"""
+        return render_template_string(html, erro=erro)
+
+    if request.method == 'POST' and request.form.get('acao') == 'criar_empresa':
         empresa = request.form.get('empresa', '').strip()
-        nome_usuario = request.form.get('nome_usuario', '').strip()
-        try:
+        nome = request.form.get('nome_usuario', '').strip()
+        email = request.form.get('email', '').lower().strip()
+        senha = request.form.get('senha', '')
+        plano = request.form.get('plano', 'Basico')
+        if plano not in PLANOS_GLPPARK:
+            plano = 'Basico'
+        valor_mensal = float(request.form.get('valor_mensal', PLANOS_GLPPARK[plano]['valor_sugerido']) or PLANOS_GLPPARK[plano]['valor_sugerido'])
+        vencimento = request.form.get('vencimento', '').strip()
+        dias_teste = max(0, int(request.form.get('dias_teste', 0) or 0))
+        teste_ate = (agora_brasilia().date() + timedelta(days=dias_teste)).isoformat() if dias_teste else ''
+        status_inicial = 'TESTE' if dias_teste else 'ATIVA'
+        limite_funcionarios = PLANOS_GLPPARK[plano]['limite_funcionarios']
+        if not empresa or not nome or not email or len(senha) < 6:
+            erro = 'Preencha todos os campos. A senha inicial precisa ter pelo menos 6 caracteres.'
+        else:
             conn = obter_conexao()
+            try:
+                codigo = secrets.token_hex(5)
+                if conn.pg:
+                    empresa_id = conn.execute("INSERT INTO empresas (nome,codigo,ativo,plano,valor_mensal,vencimento,status_assinatura,limite_funcionarios,teste_ate) VALUES (?,?,?,?,?,?,?,?,?) RETURNING id", (empresa, codigo, 1, plano, valor_mensal, vencimento or None, status_inicial, limite_funcionarios, teste_ate or None)).fetchone()['id']
+                else:
+                    empresa_id = conn.execute("INSERT INTO empresas (nome,codigo,ativo,plano,valor_mensal,vencimento,status_assinatura,limite_funcionarios,teste_ate) VALUES (?,?,?,?,?,?,?,?,?)", (empresa, codigo, 1, plano, valor_mensal, vencimento or None, status_inicial, limite_funcionarios, teste_ate or None)).lastrowid
+                conn.execute("INSERT INTO usuarios (empresa_id,nome,email,senha,perfil) VALUES (?,?,?,?,?)", (empresa_id, nome, email, generate_password_hash(senha), 'admin'))
+                conn.execute("""INSERT INTO configuracoes (empresa_id,nome,cnpj,endereco,telefone,horario,mensagem,impressora_status,valor_diaria,valor_van,valor_pernoite,logo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""", (empresa_id, empresa, '', '', '', '07:00-22:00', 'Seja Bem-Vindo!', 'Thermer Bluetooth', 50, 30, 40, ''))
+                conn.commit()
+                sucesso = f'Empresa {empresa} liberada com sucesso.'
+            except Exception:
+                conn.rollback()
+                erro = 'Não foi possível criar a empresa. Verifique se o e-mail já está cadastrado.'
+            finally:
+                conn.close()
+
+    if request.method == 'POST' and request.form.get('acao') == 'criar_empresa_teste':
+        plano = request.form.get('plano_teste', 'Basico')
+        if plano not in PLANOS_GLPPARK:
+            plano = 'Basico'
+        dias_teste = max(1, min(90, int(request.form.get('dias_teste_auto', 7) or 7)))
+        token = secrets.token_hex(3)
+        empresa = f'Empresa Teste {token.upper()}'
+        nome = 'Administrador Teste'
+        email = f'teste-{token}@glppark.local'
+        senha = 'Teste@' + secrets.token_hex(3)
+        valor = PLANOS_GLPPARK[plano]['valor_sugerido']
+        limite = PLANOS_GLPPARK[plano]['limite_funcionarios']
+        teste_ate = (agora_brasilia().date() + timedelta(days=dias_teste)).isoformat()
+        conn = obter_conexao()
+        try:
             codigo = secrets.token_hex(5)
             if conn.pg:
-                empresa_id = conn.execute("INSERT INTO empresas (nome,codigo) VALUES (?,?) RETURNING id", (empresa, codigo)).fetchone()['id']
+                empresa_id = conn.execute("INSERT INTO empresas (nome,codigo,ativo,plano,valor_mensal,vencimento,status_assinatura,limite_funcionarios,teste_ate) VALUES (?,?,?,?,?,?,?,?,?) RETURNING id", (empresa,codigo,1,plano,valor,None,'TESTE',limite,teste_ate)).fetchone()['id']
             else:
-                cur = conn.execute("INSERT INTO empresas (nome,codigo) VALUES (?,?)", (empresa, codigo)); empresa_id = cur.lastrowid
-            conn.execute("INSERT INTO usuarios (empresa_id,nome,email,senha,perfil) VALUES (?,?,?,?,?)", (empresa_id, nome_usuario, email.lower().strip(), generate_password_hash(senha), 'admin'))
-            conn.execute("""INSERT INTO configuracoes (empresa_id,nome,cnpj,endereco,telefone,horario,mensagem,impressora_status,valor_diaria,valor_van,valor_pernoite,logo)
-                          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""", (empresa_id, empresa, '', '', '', '07:00-22:00', 'Seja Bem-Vindo!', 'Thermer Bluetooth', 50, 30, 40, ''))
+                empresa_id = conn.execute("INSERT INTO empresas (nome,codigo,ativo,plano,valor_mensal,vencimento,status_assinatura,limite_funcionarios,teste_ate) VALUES (?,?,?,?,?,?,?,?,?)", (empresa,codigo,1,plano,valor,None,'TESTE',limite,teste_ate)).lastrowid
+            conn.execute("INSERT INTO usuarios (empresa_id,nome,email,senha,perfil) VALUES (?,?,?,?,?)", (empresa_id,nome,email,generate_password_hash(senha),'admin'))
+            conn.execute("INSERT INTO configuracoes (empresa_id,nome,cnpj,endereco,telefone,horario,mensagem,impressora_status,valor_diaria,valor_van,valor_pernoite,logo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", (empresa_id,empresa,'','','','07:00-22:00','Ambiente de teste GLPPARK','Thermer Bluetooth',50,30,40,''))
             conn.commit()
-            conn.close()
-            return redirect(url_for('login'))
+            sucesso = f'Empresa de teste criada. Login: {email} | Senha: {senha} | Plano: {plano} | Teste até: {teste_ate}'
         except Exception as e:
-            try: conn.rollback(); conn.close()
-            except: pass
-            return "Não foi possível cadastrar. Verifique se o e-mail já existe. <a href='/cadastro'>Tentar novamente</a>"
-    return render_template_string(HTML_CADASTRO)
+            conn.rollback(); erro = f'Não foi possível criar a empresa de teste: {e}'
+        finally:
+            conn.close()
+
+    if request.method == 'POST' and request.form.get('acao') in ('gerar_funcionarios_teste','simular_vencimento','excluir_empresa_teste'):
+        eid = int(request.form.get('empresa_id', 0) or 0)
+        conn = obter_conexao()
+        try:
+            principal = conn.execute("SELECT id FROM empresas WHERE COALESCE(principal,0)=1 ORDER BY id LIMIT 1").fetchone()
+            principal_id_check = principal['id'] if principal else None
+            emp = conn.execute("SELECT * FROM empresas WHERE id=?", (eid,)).fetchone()
+            if not emp:
+                erro = 'Empresa não encontrada.'
+            elif eid == principal_id_check:
+                erro = 'A Empresa principal do GLPPARK é protegida e não pode usar esta ação de teste.'
+            elif request.form.get('acao') == 'gerar_funcionarios_teste':
+                plano_atual = emp['plano'] or 'Basico'
+                limite = int(emp['limite_funcionarios'] or 3)
+
+                # Recomeça o teste desta empresa para o resultado ficar sempre visível e previsível.
+                conn.execute(
+                    "DELETE FROM usuarios WHERE empresa_id=? AND perfil='funcionario' AND email LIKE ?",
+                    (eid, '%@glppark.local')
+                )
+
+                if plano_atual == 'Premium':
+                    alvo = 15
+                    limite_texto = 'ilimitado'
+                elif plano_atual == 'Pro':
+                    alvo = 10
+                    limite_texto = '10'
+                else:
+                    alvo = 3
+                    limite_texto = '3'
+
+                for n in range(1, alvo + 1):
+                    token = secrets.token_hex(3)
+                    email = f'func-{eid}-{token}@glppark.local'
+                    conn.execute(
+                        "INSERT INTO usuarios(empresa_id,nome,email,senha,perfil) VALUES(?,?,?,?,?)",
+                        (eid, f'Funcionário Teste {n}', email, generate_password_hash('Teste@123'), 'funcionario')
+                    )
+
+                conn.commit()
+                if plano_atual == 'Premium':
+                    sucesso = f'{alvo} funcionário(s) de teste criado(s). O plano Premium permanece ilimitado.'
+                else:
+                    sucesso = f'{alvo} funcionário(s) de teste criado(s). O limite do plano é {limite_texto}.'
+            elif request.form.get('acao') == 'simular_vencimento':
+                ontem = (agora_brasilia().date() - timedelta(days=1)).isoformat()
+                conn.execute("UPDATE empresas SET teste_ate=NULL,vencimento=?,ativo=1,status_assinatura='ATIVA' WHERE id=?", (ontem,eid))
+                conn.commit(); sucesso = 'Vencimento simulado. A empresa agora deve aparecer como VENCIDA e ter o login bloqueado.'
+            else:
+                # Exclui apenas empresa secundária criada para testes e todos os dados vinculados.
+                for tabela in ('movimentos_caixa','caixas','auditoria','veiculos','mensalistas','anuncios','configuracoes','usuarios'):
+                    conn.execute(f"DELETE FROM {tabela} WHERE empresa_id=?", (eid,))
+                conn.execute("DELETE FROM empresas WHERE id=?", (eid,))
+                conn.commit(); sucesso = 'Empresa de teste e seus dados foram excluídos.'
+        except Exception as e:
+            conn.rollback(); erro = f'Falha na ação de teste: {e}'
+        finally:
+            conn.close()
+
+    if request.method == 'POST' and request.form.get('acao') in ('atualizar_empresa','trocar_plano','suspender_empresa','reativar_empresa'):
+        eid = int(request.form.get('empresa_id', 0) or 0)
+        conn = obter_conexao()
+        try:
+            acao = request.form.get('acao')
+            principal = conn.execute("SELECT id FROM empresas WHERE COALESCE(principal,0)=1 ORDER BY id LIMIT 1").fetchone()
+            principal_id = principal['id'] if principal else None
+            if acao == 'suspender_empresa':
+                if eid == principal_id:
+                    erro = 'A Empresa principal do GLPPARK não pode ser suspensa.'
+                else:
+                    conn.execute("UPDATE empresas SET ativo=0,status_assinatura='SUSPENSA' WHERE id=?", (eid,))
+                    sucesso = 'Empresa suspensa com sucesso.'
+            elif acao == 'reativar_empresa':
+                conn.execute("UPDATE empresas SET ativo=1,status_assinatura='ATIVA' WHERE id=?", (eid,))
+                sucesso = 'Empresa reativada com sucesso.'
+            elif acao == 'trocar_plano':
+                plano = request.form.get('plano', 'Basico')
+                if plano not in PLANOS_GLPPARK:
+                    plano = 'Basico'
+                valor = PLANOS_GLPPARK[plano]['valor_sugerido']
+                limite = PLANOS_GLPPARK[plano]['limite_funcionarios']
+                conn.execute("UPDATE empresas SET plano=?,valor_mensal=?,limite_funcionarios=? WHERE id=?", (plano, valor, limite, eid))
+                sucesso = f'Plano alterado para {plano} com sucesso.'
+            else:
+                plano = request.form.get('plano', 'Basico')
+                if plano not in PLANOS_GLPPARK: plano = 'Basico'
+                valor = float(request.form.get('valor_mensal', PLANOS_GLPPARK[plano]['valor_sugerido']) or PLANOS_GLPPARK[plano]['valor_sugerido'])
+                venc = request.form.get('vencimento', '').strip()
+                limite = PLANOS_GLPPARK[plano]['limite_funcionarios']
+                conn.execute("UPDATE empresas SET plano=?,valor_mensal=?,vencimento=?,limite_funcionarios=? WHERE id=?", (plano,valor,venc or None,limite,eid))
+                sucesso = 'Plano comercial atualizado.'
+            conn.commit()
+        except Exception as e:
+            conn.rollback(); erro = f'Não foi possível atualizar a empresa: {e}'
+        finally:
+            conn.close()
+
+    conn = obter_conexao()
+    empresas = conn.execute("SELECT e.*,u.nome AS admin_nome,u.email FROM empresas e LEFT JOIN usuarios u ON u.empresa_id=e.id AND u.perfil='admin' ORDER BY e.id DESC").fetchall()
+    principal = conn.execute("SELECT id FROM empresas WHERE COALESCE(principal,0)=1 ORDER BY id LIMIT 1").fetchone()
+    principal_id = principal['id'] if principal else None
+    conn.close()
+    total_empresas = len(empresas)
+    total_ativas = sum(1 for e in empresas if status_empresa(e) in ('ATIVA','TESTE'))
+    total_vencidas = sum(1 for e in empresas if status_empresa(e) == 'VENCIDA')
+    total_suspensas = sum(1 for e in empresas if status_empresa(e) == 'SUSPENSA')
+    receita_prevista = sum(float(e['valor_mensal'] or 0) for e in empresas if status_empresa(e) in ('ATIVA','TESTE'))
+    html = """<!doctype html><html lang="pt-BR"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><title>Gestão GLPPARK</title><style>
+    body{background:#f4f5f7}.wrap{max-width:980px;margin:auto}.empresa-card{border:0;border-left:5px solid #d35400;border-radius:12px}.mini{font-size:.86rem}.empresa-email{overflow-wrap:anywhere}.status-box{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.dados-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.dado{background:#f8f9fa;border-radius:8px;padding:9px}.dado b{display:block;font-size:.78rem;color:#6c757d;margin-bottom:2px}.acoes-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.acoes-grid .full{grid-column:1/-1}@media(max-width:576px){.container{padding-left:12px;padding-right:12px}.topo h3{font-size:1.35rem}.dados-grid,.acoes-grid{grid-template-columns:1fr}.acoes-grid .full{grid-column:auto}.empresa-card{border-left-width:4px}.card-body{padding:14px}.form-label{font-size:.9rem;font-weight:600}}
+    </style></head><body><div class="container py-3 wrap"><div class="topo d-flex justify-content-between align-items-center mb-3"><h3 class="mb-0">🚗 Gestão GLPPARK</h3><a href="/gestao-glppark/sair" class="btn btn-outline-danger btn-sm">Sair</a></div>{% if erro %}<div class="alert alert-danger">{{ erro }}</div>{% endif %}{% if sucesso %}<div class="alert alert-success">{{ sucesso }}</div>{% endif %}
+    <div class="row g-2 mb-3"><div class="col-6 col-md-3"><div class="card p-2 text-center"><small>Empresas</small><b>{{total_empresas}}</b></div></div><div class="col-6 col-md-3"><div class="card p-2 text-center"><small>Ativas/Teste</small><b class="text-success">{{total_ativas}}</b></div></div><div class="col-6 col-md-3"><div class="card p-2 text-center"><small>Vencidas/Suspensas</small><b class="text-danger">{{total_vencidas + total_suspensas}}</b></div></div><div class="col-6 col-md-3"><div class="card p-2 text-center"><small>Receita prevista/mês</small><b>R$ {{'%.2f'|format(receita_prevista)}}</b></div></div></div><div class="card shadow-sm p-3 mb-3 border-warning"><h5>🧪 Modo de teste rápido</h5><p class="small text-muted mb-2">Cria login fictício automaticamente, sem precisar usar outro e-mail real.</p><form method="post"><input type="hidden" name="acao" value="criar_empresa_teste"><div class="row g-2"><div class="col-6"><label class="form-label">Plano</label><select name="plano_teste" class="form-select"><option value="Basico">Básico</option><option value="Pro">Pro</option><option value="Premium">Premium</option></select></div><div class="col-6"><label class="form-label">Dias de teste</label><input name="dias_teste_auto" type="number" min="1" max="90" value="7" class="form-control"></div></div><button class="btn btn-warning w-100 mt-2 fw-bold">Criar empresa de teste automaticamente</button></form></div><div class="card shadow-sm p-3 mb-3"><h5>Liberar nova empresa</h5><form method="post"><input type="hidden" name="acao" value="criar_empresa"><div class="row g-2"><div class="col-md-6"><label class="form-label">Empresa</label><input name="empresa" class="form-control" placeholder="Nome da empresa" required></div><div class="col-md-6"><label class="form-label">Administrador</label><input name="nome_usuario" class="form-control" placeholder="Nome do administrador" required></div><div class="col-md-6"><label class="form-label">E-mail</label><input name="email" type="email" class="form-control" placeholder="E-mail do administrador" required></div><div class="col-md-6"><label class="form-label">Senha inicial</label><input name="senha" type="password" minlength="6" class="form-control" placeholder="Mínimo 6 caracteres" required></div><div class="col-6 col-md-3"><label class="form-label">Plano</label><select name="plano" id="novoPlano" class="form-select"><option value="Basico">Basico</option><option value="Pro">Pro</option><option value="Premium">Premium</option></select></div><div class="col-6 col-md-3"><label class="form-label">Mensalidade</label><input name="valor_mensal" id="novoValor" type="number" step=".01" min="0" class="form-control" value="49.90"></div><div class="col-12 col-md-3"><label class="form-label">Vencimento</label><input name="vencimento" type="date" class="form-control"></div><div class="col-12 col-md-3"><label class="form-label">Dias de teste</label><input name="dias_teste" type="number" min="0" value="0" class="form-control"></div></div><button class="btn btn-success w-100 mt-3">Liberar empresa</button></form></div>
+    <h5 class="mb-2">Empresas cadastradas</h5>
+    <div class="d-grid gap-3">{% for e in empresas %}{% set st=status_empresa(e) %}<div class="card empresa-card shadow-sm"><div class="card-body"><div class="d-flex justify-content-between gap-2 align-items-start mb-3"><div><h5 class="mb-1">{{e.nome}}{% if e.id==principal_id %} <span class="badge bg-dark">GLPPARK — Administrador Geral</span>{% endif %}</h5><div class="mini text-muted">{{e.admin_nome or 'Administrador não informado'}}</div><div class="mini text-muted empresa-email">{{e.email or ''}}</div></div><span class="badge {% if st in ['ATIVA','TESTE'] %}bg-success{% elif st=='VENCIDA' %}bg-warning text-dark{% else %}bg-danger{% endif %}">{{st}}</span></div>
+    <div class="dados-grid mb-3"><div class="dado"><b>Plano atual</b>{{e.plano or 'Basico'}}</div><div class="dado"><b>Mensalidade</b>R$ {{'%.2f'|format(e.valor_mensal or 0)}}</div><div class="dado"><b>Vencimento</b>{{e.vencimento or 'Não definido'}}</div><div class="dado"><b>Limite de funcionários</b>{% if (e.plano or 'Basico')=='Premium' %}Ilimitado{% else %}{{e.limite_funcionarios or 3}}{% endif %}</div>{% if e.teste_ate %}<div class="dado"><b>Teste até</b>{{e.teste_ate}}</div>{% endif %}</div>
+    <div class="mb-3">
+<label class="form-label">Trocar plano</label>
+<form method="post">
+<input type="hidden" name="acao" value="trocar_plano">
+<input type="hidden" name="empresa_id" value="{{e.id}}">
+<select name="plano" class="form-select mb-2" required>
+<option value="Basico" {% if e.plano=='Basico' %}selected{% endif %}>Básico — R$ 49,90 — 3 funcionários</option>
+<option value="Pro" {% if e.plano=='Pro' %}selected{% endif %}>Pro — R$ 89,90 — 10 funcionários</option>
+<option value="Premium" {% if e.plano=='Premium' %}selected{% endif %}>Premium — R$ 149,90 — ilimitado</option>
+</select>
+<button class="btn btn-dark w-100">Aplicar plano selecionado</button>
+</form>
+</div>
+<form method="post" class="mb-2"><input type="hidden" name="acao" value="atualizar_empresa"><input type="hidden" name="empresa_id" value="{{e.id}}"><input type="hidden" name="plano" value="{{e.plano or 'Basico'}}"><div class="row g-2"><div class="col-12 col-sm-6"><label class="form-label">Valor mensal personalizado</label><input name="valor_mensal" type="number" step=".01" min="0" value="{{e.valor_mensal or 0}}" class="form-control"></div><div class="col-12 col-sm-6"><label class="form-label">Vencimento</label><input name="vencimento" type="date" value="{{e.vencimento or ''}}" class="form-control"></div></div><button class="btn btn-primary w-100 mt-2">Salvar valor e vencimento</button></form>
+    {% if e.id!=principal_id %}<div class="border rounded p-2 mb-2 bg-light"><div class="small fw-bold mb-2">🧪 Ferramentas de teste</div><div class="acoes-grid"><form method="post"><input type="hidden" name="acao" value="gerar_funcionarios_teste"><input type="hidden" name="empresa_id" value="{{e.id}}"><button class="btn btn-outline-primary w-100">Gerar funcionários</button></form><form method="post"><input type="hidden" name="acao" value="simular_vencimento"><input type="hidden" name="empresa_id" value="{{e.id}}"><button class="btn btn-outline-warning w-100">Simular vencimento</button></form><form method="post" class="full" onsubmit="return confirm('Excluir esta empresa e TODOS os dados dela?');"><input type="hidden" name="acao" value="excluir_empresa_teste"><input type="hidden" name="empresa_id" value="{{e.id}}"><button class="btn btn-outline-danger w-100">🗑️ Excluir empresa de teste</button></form></div></div>{% endif %}
+    {% if e.id==principal_id %}<div class="alert alert-secondary py-2 mb-0 text-center">Empresa principal protegida contra suspensão.</div>{% elif st=='SUSPENSA' %}<form method="post"><input type="hidden" name="acao" value="reativar_empresa"><input type="hidden" name="empresa_id" value="{{e.id}}"><button class="btn btn-success w-100">Reativar empresa</button></form>{% else %}<form method="post"><input type="hidden" name="acao" value="suspender_empresa"><input type="hidden" name="empresa_id" value="{{e.id}}"><button class="btn btn-outline-danger w-100">Suspender empresa</button></form>{% endif %}</div></div>{% else %}<div class="alert alert-secondary">Nenhuma empresa cadastrada.</div>{% endfor %}</div></div>
+
+
+<script>
+(function () {
+    const precosNovaEmpresa = {
+        Basico: '49.90',
+        Pro: '89.90',
+        Premium: '149.90'
+    };
+
+    function atualizarMensalidadeNovaEmpresa() {
+        const plano = document.getElementById('novoPlano');
+        const valor = document.getElementById('novoValor');
+        if (!plano || !valor) return;
+        const preco = precosNovaEmpresa[plano.value];
+        if (preco !== undefined) valor.value = preco;
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        const plano = document.getElementById('novoPlano');
+        if (!plano) return;
+        plano.addEventListener('change', atualizarMensalidadeNovaEmpresa);
+        plano.addEventListener('input', atualizarMensalidadeNovaEmpresa);
+        atualizarMensalidadeNovaEmpresa();
+    });
+})();
+</script>
+</body></html>"""
+    return render_template_string(html, empresas=empresas, erro=erro, sucesso=sucesso, status_empresa=status_empresa, principal_id=principal_id, total_empresas=total_empresas, total_ativas=total_ativas, total_vencidas=total_vencidas, total_suspensas=total_suspensas, receita_prevista=receita_prevista)
+
+@app.route('/gestao-glppark/sair')
+def sair_gestao_glppark():
+    session.pop('gestor_glppark', None)
+    return redirect(url_for('gestao_glppark'))
 
 @app.route('/dashboard')
 def dashboard():
     if 'email' not in session:
         return redirect(url_for('login'))
+    conn = obter_conexao()
+    emp = conn.execute("SELECT * FROM empresas WHERE id=?", (session['empresa_id'],)).fetchone()
+    conn.close()
+    if not acesso_empresa_liberado(emp):
+        session.clear()
+        situacao = status_empresa(emp)
+        mensagem = 'Assinatura vencida. Entre em contato com a administração do GLPPARK.' if situacao == 'VENCIDA' else 'Empresa suspensa. Entre em contato com a administração do GLPPARK.'
+        return f"<h3>{mensagem}</h3><a href='/'>Voltar ao login</a>", 403
+    session['plano'] = emp['plano'] or 'Basico'
+    session['status_assinatura'] = status_empresa(emp)
     cfg, anuncios, ativos, concluidos, talao_atual = get_dados()
-    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, qr_entrada=None, saida_recente=None)
+    empresa_vencimento = emp['vencimento'] or ''
+    aviso_vencimento = ''
+    if empresa_vencimento:
+        try:
+            venc = datetime.strptime(empresa_vencimento, '%Y-%m-%d').date()
+            dias = (venc - agora_brasilia().date()).days
+            if 0 <= dias <= 5:
+                aviso_vencimento = f'Atenção: a assinatura vence em {dias} dia(s), em {empresa_vencimento}.'
+        except ValueError:
+            pass
+    return render_template_string(
+        HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos,
+        talao_atual=talao_atual, qr_entrada=None, saida_recente=None,
+        recurso_liberado=recurso_liberado, empresa_vencimento=empresa_vencimento,
+        aviso_vencimento=aviso_vencimento
+    )
 
 @app.route('/logo')
 def logo_empresa():
@@ -649,7 +1018,7 @@ def entrada():
         if tipo_tarifa not in valores:
             tipo_tarifa = 'diaria'
         valor = valores[tipo_tarifa]
-        hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        hora = agora_banco()
         
         conn = obter_conexao()
         mensalista = conn.execute("SELECT id FROM mensalistas WHERE empresa_id=? AND UPPER(placa)=? AND ativo=1", (session['empresa_id'], placa)).fetchone()
@@ -683,7 +1052,7 @@ def entrada():
         talao_atual = numero_talao
         qr_texto = f"PLACA:{placa}|TALAO:{numero_talao}|ENTRADA:{hora}"
         
-        return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, qr_entrada=qr_texto, placa_recente=placa, modelo_recente=modelo, cor_recente=cor, valor_recente=valor, tipo_tarifa_recente=tipo_tarifa, saida_recente=None)
+        return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, qr_entrada=qr_texto, placa_recente=placa, modelo_recente=modelo, cor_recente=cor, valor_recente=valor, tipo_tarifa_recente=tipo_tarifa, saida_recente=None, recurso_liberado=recurso_liberado, empresa_vencimento='', aviso_vencimento='')
     
     return redirect(url_for('dashboard'))
 
@@ -708,7 +1077,7 @@ def reimprimir(id):
         return redirect(url_for('dashboard'))
 
     qr_texto = f"PLACA:{v['placa']}|TALAO:{talao_atual}|ENTRADA:{v['hora_entrada']}"
-    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, qr_entrada=qr_texto, placa_recente=v['placa'], modelo_recente=v['modelo'], cor_recente=v['cor'], valor_recente=v['valor'], tipo_tarifa_recente=v['tipo_tarifa'] or 'diaria', saida_recente=None)
+    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, qr_entrada=qr_texto, placa_recente=v['placa'], modelo_recente=v['modelo'], cor_recente=v['cor'], valor_recente=v['valor'], tipo_tarifa_recente=v['tipo_tarifa'] or 'diaria', saida_recente=None, recurso_liberado=recurso_liberado, empresa_vencimento='', aviso_vencimento='')
 
 @app.route('/saida_scanner', methods=['POST'])
 def saida_scanner():
@@ -734,7 +1103,7 @@ def saida_scanner():
 
     fmt = "%Y-%m-%d %H:%M:%S"
     entrada = datetime.strptime(v['hora_entrada'], fmt)
-    saida = datetime.now()
+    saida = agora_brasilia().replace(tzinfo=None)
     tempo_total = saida - entrada
     minutos = max(0, tempo_total.total_seconds() / 60)
     cfg = conn.execute("SELECT * FROM configuracoes WHERE empresa_id=?", (eid,)).fetchone()
@@ -759,7 +1128,7 @@ def saida_scanner():
     v_atualizado = conn.execute("SELECT * FROM veiculos WHERE id=? AND empresa_id=?", (v['id'], eid)).fetchone()
     conn.close()
     
-    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, saida_recente=v_atualizado, qr_entrada=None)
+    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, saida_recente=v_atualizado, qr_entrada=None, recurso_liberado=recurso_liberado, empresa_vencimento='', aviso_vencimento='')
 
 @app.route('/editar/<int:id>', methods=['POST'])
 def editar(id):
@@ -832,6 +1201,8 @@ def salvar_config():
 def add_anuncio():
     if 'email' not in session or session.get('perfil') != 'admin':
         return redirect(url_for('login'))
+    bloqueio = exigir_recurso('anuncios')
+    if bloqueio: return bloqueio
     conn = obter_conexao()
     conn.execute("INSERT INTO anuncios (empresa_id,texto) VALUES (?,?)", (session['empresa_id'], request.form['texto']))
     conn.commit()
@@ -842,6 +1213,8 @@ def add_anuncio():
 def del_anuncio(id):
     if 'email' not in session or session.get('perfil') != 'admin':
         return redirect(url_for('login'))
+    bloqueio = exigir_recurso('anuncios')
+    if bloqueio: return bloqueio
     conn = obter_conexao()
     conn.execute("DELETE FROM anuncios WHERE id=? AND empresa_id=?", (id, session['empresa_id']))
     conn.commit()
@@ -856,14 +1229,23 @@ def funcionarios():
     erro = ''
     if request.method == 'POST':
         try:
-            conn.execute("INSERT INTO usuarios (empresa_id,nome,email,senha,perfil) VALUES (?,?,?,?,?)", (session['empresa_id'], request.form.get('nome','').strip(), request.form.get('email','').lower().strip(), generate_password_hash(request.form.get('senha','')), 'funcionario'))
-            conn.commit()
+            emp = conn.execute("SELECT * FROM empresas WHERE id=?", (session['empresa_id'],)).fetchone()
+            total_func = conn.execute("SELECT COUNT(*) AS total FROM usuarios WHERE empresa_id=? AND perfil='funcionario'", (session['empresa_id'],)).fetchone()
+            total_atual = total_func['total'] if hasattr(total_func, 'keys') else total_func[0]
+            limite = int(emp['limite_funcionarios'] or 3) if emp else 3
+            if total_atual >= limite:
+                erro = f'Limite de {limite} funcionário(s) atingido para o plano {emp["plano"] if emp else "Basico"}.'
+            else:
+                conn.execute("INSERT INTO usuarios (empresa_id,nome,email,senha,perfil) VALUES (?,?,?,?,?)", (session['empresa_id'], request.form.get('nome','').strip(), request.form.get('email','').lower().strip(), generate_password_hash(request.form.get('senha','')), 'funcionario'))
+                conn.commit()
         except Exception:
             conn.rollback(); erro = 'Não foi possível cadastrar. O e-mail pode já estar em uso.'
     lista = conn.execute("SELECT id,nome,email,perfil FROM usuarios WHERE empresa_id=? ORDER BY nome", (session['empresa_id'],)).fetchall()
+    emp_info = conn.execute("SELECT plano,limite_funcionarios FROM empresas WHERE id=?", (session['empresa_id'],)).fetchone()
+    total_funcionarios = sum(1 for u in lista if u['perfil'] == 'funcionario')
     conn.close()
-    html = '''<!doctype html><html lang="pt-BR"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"></head><body class="bg-light"><div class="container py-3" style="max-width:650px"><div class="card p-3 shadow"><h3>Funcionários</h3>{% if erro %}<div class="alert alert-danger">{{ erro }}</div>{% endif %}<form method="post"><input name="nome" class="form-control mb-2" placeholder="Nome" required><input name="email" type="email" class="form-control mb-2" placeholder="E-mail" required><input name="senha" type="password" class="form-control mb-2" placeholder="Senha inicial" minlength="6" required><button class="btn btn-primary w-100">Cadastrar funcionário</button></form><hr>{% for u in lista %}<div class="border rounded p-2 mb-2"><b>{{u.nome}}</b><br><small>{{u.email}} — {{u.perfil}}</small>{% if u.perfil != 'admin' %}<a class="btn btn-sm btn-outline-danger float-end" href="/excluir_funcionario/{{u.id}}">Excluir</a>{% endif %}</div>{% endfor %}<a href="/dashboard" class="btn btn-secondary">Voltar</a></div></div></body></html>'''
-    return render_template_string(html, lista=lista, erro=erro)
+    html = '''<!doctype html><html lang="pt-BR"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"></head><body class="bg-light"><div class="container py-3" style="max-width:650px"><div class="card p-3 shadow"><h3>Funcionários</h3><div class="alert alert-info py-2"><b>Plano:</b> {{emp_info.plano if emp_info else 'Basico'}} — <b>Funcionários:</b> {{total_funcionarios}} / {% if emp_info and emp_info.plano=='Premium' %}Ilimitado{% else %}{{emp_info.limite_funcionarios if emp_info else 3}}{% endif %}</div>{% if erro %}<div class="alert alert-danger">{{ erro }}</div>{% endif %}<form method="post"><input name="nome" class="form-control mb-2" placeholder="Nome" required><input name="email" type="email" class="form-control mb-2" placeholder="E-mail" required><input name="senha" type="password" class="form-control mb-2" placeholder="Senha inicial" minlength="6" required><button class="btn btn-primary w-100">Cadastrar funcionário</button></form><hr>{% for u in lista %}<div class="border rounded p-2 mb-2"><b>{{u.nome}}</b><br><small>{{u.email}} — {{u.perfil}}</small>{% if u.perfil != 'admin' %}<a class="btn btn-sm btn-outline-danger float-end" href="/excluir_funcionario/{{u.id}}">Excluir</a>{% endif %}</div>{% endfor %}<a href="/dashboard" class="btn btn-secondary">Voltar</a></div></div></body></html>'''
+    return render_template_string(html, lista=lista, erro=erro, emp_info=emp_info, total_funcionarios=total_funcionarios)
 
 @app.route('/excluir_funcionario/<int:id>')
 def excluir_funcionario(id):
@@ -878,6 +1260,8 @@ def somente_admin(): return 'email' in session and session.get('perfil') == 'adm
 @app.route('/mensalistas', methods=['GET','POST'])
 def mensalistas():
     if not somente_admin(): return redirect(url_for('dashboard'))
+    bloqueio = exigir_recurso('mensalistas')
+    if bloqueio: return bloqueio
     conn=obter_conexao(); eid=session['empresa_id']
     if request.method=='POST':
         conn.execute("INSERT INTO mensalistas(empresa_id,nome,documento,telefone,placa,modelo,valor_mensal,dia_vencimento,ativo) VALUES(?,?,?,?,?,?,?,?,1)",(eid,request.form['nome'],request.form.get('documento',''),request.form.get('telefone',''),request.form['placa'].upper().strip(),request.form.get('modelo',''),float(request.form.get('valor_mensal',0)),int(request.form.get('dia_vencimento',10))))
@@ -896,9 +1280,11 @@ def mensalista_status(id):
 @app.route('/financeiro', methods=['GET','POST'])
 def financeiro():
     if not somente_admin(): return redirect(url_for('dashboard'))
+    bloqueio = exigir_recurso('financeiro')
+    if bloqueio: return bloqueio
     conn=obter_conexao();eid=session['empresa_id'];caixa=obter_caixa_aberto(conn)
     if request.method=='POST':
-        acao=request.form.get('acao');agora=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        acao=request.form.get('acao');agora=agora_banco()
         if acao=='abrir' and not caixa:
             conn.execute("INSERT INTO caixas(empresa_id,usuario_id,aberto_em,saldo_inicial,status) VALUES(?,?,?,?,?)",(eid,session['usuario_id'],agora,float(request.form.get('saldo_inicial',0)),'ABERTO'));registrar_auditoria(conn,'ABERTURA_CAIXA',request.form.get('saldo_inicial','0'))
         elif acao in ('DESPESA','RETIRADA') and caixa:
@@ -917,7 +1303,9 @@ def financeiro():
 @app.route('/relatorios')
 def relatorios():
     if not somente_admin(): return redirect(url_for('dashboard'))
-    inicio=request.args.get('inicio',datetime.now().strftime('%Y-%m-01'));fim=request.args.get('fim',datetime.now().strftime('%Y-%m-%d'));conn=obter_conexao();eid=session['empresa_id'];regs=conn.execute("SELECT * FROM veiculos WHERE empresa_id=? AND substr(hora_entrada,1,10)>=? AND substr(hora_entrada,1,10)<=? ORDER BY id DESC",(eid,inicio,fim)).fetchall();aud=conn.execute("SELECT * FROM auditoria WHERE empresa_id=? ORDER BY id DESC LIMIT 50",(eid,)).fetchall();conn.close();receita=sum(float(x['valor_total'] or 0) for x in regs if x['status']=='FINALIZADO');cancelados=sum(1 for x in regs if x['cancelado']);linhas=''.join(f'''<tr><td>{x['placa']}</td><td>{x['hora_entrada']}</td><td>{x['hora_saida'] or '-'}</td><td>{x['forma_pagamento'] or '-'}</td><td>R$ {float(x['valor_total'] or 0):.2f}</td><td>{x['status']}</td><td>{f'<a href="/cancelar_registro/{x["id"]}" class="btn btn-sm btn-outline-danger">Cancelar</a>' if not x['cancelado'] else 'Cancelado'}</td></tr>''' for x in regs);logs=''.join(f'''<li class="list-group-item"><small>{x['criado_em']} — {x['acao']} — {x['detalhes'] or ''}</small></li>''' for x in aud)
+    bloqueio = exigir_recurso('relatorios')
+    if bloqueio: return bloqueio
+    inicio=request.args.get('inicio',agora_brasilia().strftime('%Y-%m-01'));fim=request.args.get('fim',agora_brasilia().strftime('%Y-%m-%d'));conn=obter_conexao();eid=session['empresa_id'];regs=conn.execute("SELECT * FROM veiculos WHERE empresa_id=? AND substr(hora_entrada,1,10)>=? AND substr(hora_entrada,1,10)<=? ORDER BY id DESC",(eid,inicio,fim)).fetchall();aud=conn.execute("SELECT * FROM auditoria WHERE empresa_id=? ORDER BY id DESC LIMIT 50",(eid,)).fetchall();conn.close();receita=sum(float(x['valor_total'] or 0) for x in regs if x['status']=='FINALIZADO');cancelados=sum(1 for x in regs if x['cancelado']);linhas=''.join(f'''<tr><td>{x['placa']}</td><td>{x['hora_entrada']}</td><td>{x['hora_saida'] or '-'}</td><td>{x['forma_pagamento'] or '-'}</td><td>R$ {float(x['valor_total'] or 0):.2f}</td><td>{x['status']}</td><td>{f'<a href="/cancelar_registro/{x["id"]}" class="btn btn-sm btn-outline-danger">Cancelar</a>' if not x['cancelado'] else 'Cancelado'}</td></tr>''' for x in regs);logs=''.join(f'''<li class="list-group-item"><small>{x['criado_em']} — {x['acao']} — {x['detalhes'] or ''}</small></li>''' for x in aud)
     conteudo=f'''<form class="row g-2 mb-3"><div class="col"><input class="form-control" type="date" name="inicio" value="{inicio}"></div><div class="col"><input class="form-control" type="date" name="fim" value="{fim}"></div><div class="col"><button class="btn btn-primary w-100">Filtrar</button></div></form><div class="row g-2 mb-3"><div class="col"><div class="card p-3"><b>Registros</b><span>{len(regs)}</span></div></div><div class="col"><div class="card p-3"><b>Receita</b><span>R$ {receita:.2f}</span></div></div><div class="col"><div class="card p-3"><b>Cancelados</b><span>{cancelados}</span></div></div></div><a class="btn btn-success mb-3" href="/exportar_csv?inicio={inicio}&fim={fim}">Exportar CSV</a><div class="card p-2 table-responsive"><table class="table table-sm"><thead><tr><th>Placa</th><th>Entrada</th><th>Saída</th><th>Pagamento</th><th>Total</th><th>Status</th><th>Ação</th></tr></thead><tbody>{linhas}</tbody></table></div><h5 class="mt-3">Auditoria</h5><ul class="list-group">{logs}</ul>'''
     return render_template_string(BASE_PRO,titulo='Relatórios',conteudo=conteudo)
 
@@ -926,7 +1314,7 @@ def cancelar_registro(id):
     if somente_admin():
         conn=obter_conexao();v=conn.execute("SELECT * FROM veiculos WHERE id=? AND empresa_id=?",(id,session['empresa_id'])).fetchone()
         if v and not v['cancelado']:
-            conn.execute("UPDATE veiculos SET cancelado=1,status='CANCELADO' WHERE id=? AND empresa_id=?",(id,session['empresa_id']));conn.execute("INSERT INTO movimentos_caixa(empresa_id,usuario_id,veiculo_id,tipo,descricao,valor,forma_pagamento,criado_em) VALUES(?,?,?,?,?,?,?,?)",(session['empresa_id'],session['usuario_id'],id,'ESTORNO','Cancelamento '+v['placa'],float(v['valor_total'] or 0),v['forma_pagamento'],datetime.now().strftime('%Y-%m-%d %H:%M:%S')));registrar_auditoria(conn,'CANCELAMENTO',f"Placa {v['placa']}");conn.commit()
+            conn.execute("UPDATE veiculos SET cancelado=1,status='CANCELADO' WHERE id=? AND empresa_id=?",(id,session['empresa_id']));conn.execute("INSERT INTO movimentos_caixa(empresa_id,usuario_id,veiculo_id,tipo,descricao,valor,forma_pagamento,criado_em) VALUES(?,?,?,?,?,?,?,?)",(session['empresa_id'],session['usuario_id'],id,'ESTORNO','Cancelamento '+v['placa'],float(v['valor_total'] or 0),v['forma_pagamento'],agora_banco()));registrar_auditoria(conn,'CANCELAMENTO',f"Placa {v['placa']}");conn.commit()
         conn.close()
     return redirect(url_for('relatorios'))
 
@@ -966,36 +1354,21 @@ function listar(){let a=veiculos.filter(v=>v.status==='ATIVO');$('lista').innerH
 function darSaida(id){let v=veiculos.find(x=>x.offline_id===id);if(!v)return;let agora=new Date(),mins=(agora-new Date(v.hora_entrada))/60000,bruto=0;if(mins>15&&v.tipo_tarifa!=='mensalista'){if(v.tipo_tarifa==='hora'){bruto=Number(cfg.hora||10);if(mins>60)bruto+=Math.ceil((mins-60)/Number(cfg.minutos_fracao||30))*Number(cfg.fracao||5)}else bruto=Number(v.valor)}let perdido=confirm('O talão foi perdido?');if(perdido)bruto+=Number(cfg.taxa_talao||0);let desconto=cfg.perfil==='admin'?Number(prompt('Desconto autorizado em R$ (0 para nenhum):','0')||0):0,pagamento=prompt('Pagamento: Dinheiro, Pix, Cartão de débito ou Cartão de crédito','Dinheiro')||'Dinheiro';v.hora_saida=agora.toISOString();v.valor_total=Math.max(0,bruto-desconto);v.forma_pagamento=pagamento;v.desconto=desconto;v.talao_perdido=perdido?1:0;v.status='FINALIZADO';fila.push({acao:'saida',dados:{offline_id:id,hora_saida:v.hora_saida,valor_total:v.valor_total,forma_pagamento:pagamento,desconto:desconto,talao_perdido:v.talao_perdido}});persistir();comprovante(v,'SAÍDA')}
 function comprovantePorId(id){let v=veiculos.find(x=>x.offline_id===id);if(v)comprovante(v,v.status==='ATIVO'?'ENTRADA':'SAÍDA')}function comprovante(v,t){$('reciboTexto').innerHTML=`<div style="text-align:center">${cfg.logo?`<img class="logo" src="${cfg.logo}"><br>`:''}<b>${cfg.nome||'GLPPARK'}</b><br><small>${cfg.cnpj||''}<br>${cfg.endereco||''}<br>${cfg.telefone||''}</small></div><hr><b>COMPROVANTE DE ${t}</b><p>Placa: <b>${v.placa}</b><br>Modelo: ${v.modelo||'-'}<br>Cor: ${v.cor||'-'}<br>Talão: ${v.numero_talao||'-'}<br>Entrada: ${data(v.hora_entrada)}${t==='SAÍDA'?`<br>Saída: ${data(v.hora_saida)}<br><b>Total: R$ ${moeda(v.valor_total)}</b>`:''}</p><hr><div style="text-align:center">${cfg.mensagem||''}</div>`;aba('recibo');setTimeout(()=>print(),300)}
 function salvarConfig(){if(cfg.perfil!=='admin')return;let n={perfil:'admin',nome:$('cNome').value.trim()||'GLPPARK',cnpj:$('cCnpj').value,endereco:$('cEndereco').value,telefone:$('cTelefone').value,horario:$('cHorario').value,diaria:Number($('cDiaria').value),van:Number($('cVan').value),pernoite:Number($('cPernoite').value),mensagem:$('cMensagem').value,impressora:$('cImpressora').value,logo:cfg.logo||''},f=$('cLogo').files[0],fim=()=>{cfg=n;localStorage.setItem(KC,JSON.stringify(cfg));fila.push({acao:'config',dados:cfg});persistir();aplicar();alert('Configurações salvas no celular.')};if(f){if(f.size>2097152)return alert('A logo deve ter no máximo 2 MB.');let r=new FileReader();r.onload=()=>{n.logo=r.result;fim()};r.readAsDataURL(f)}else fim()}
-let sincronizando=false;
-async function sincronizar(){
- if(!navigator.onLine||!fila.length||sincronizando)return;
- sincronizando=true;$('rede').textContent='Online — sincronizando...';
- try{
-  const pendentes=[...fila];
-  let r=await fetch('/api/sincronizar',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({empresa_chave:empresa,operacoes:pendentes})});
-  let resp={};try{resp=await r.json()}catch(_e){}
-  if(r.ok&&resp.ok&&resp.confirmado){
-   fila=[];
-   if(Array.isArray(resp.veiculos_ativos))veiculos=resp.veiculos_ativos;
-   persistir();
-   $('rede').textContent='Sincronização concluída';
-   setTimeout(()=>location.replace('/dashboard?sync='+Date.now()),700);
-  }else{
-   $('rede').textContent=resp.erro?'Falha ao sincronizar: '+resp.erro:'Entre novamente para sincronizar';
-  }
- }catch(e){$('rede').textContent='Sem internet — dados seguros no celular'}
- finally{sincronizando=false}
-}
-function rede(){$('rede').textContent=navigator.onLine?'Online — sincronizando...':'Modo offline — dados seguros no celular';if(navigator.onLine)sincronizar()}
-window.addEventListener('online',rede);window.addEventListener('offline',rede);aplicar();listar();rede();if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js');
+async function sincronizar(){if(!navigator.onLine||!fila.length)return;try{let r=await fetch('/api/sincronizar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({empresa_chave:empresa,operacoes:fila})});if(r.ok){fila=[];persistir();$('rede').textContent='Sincronização concluída';setTimeout(()=>location.href='/dashboard',1000)}else $('rede').textContent='Entre novamente para sincronizar'}catch(e){$('rede').textContent='Sem internet — dados seguros no celular'}}function rede(){$('rede').textContent=navigator.onLine?'Online — sincronizando...':'Modo offline — dados seguros no celular';if(navigator.onLine)sincronizar()}window.addEventListener('online',rede);window.addEventListener('offline',rede);aplicar();listar();rede();if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js');
 </script></body></html>'''
 
 @app.route('/offline')
 def offline(): return HTML_OFFLINE
 
 def iso_para_banco(valor):
-    try: return datetime.fromisoformat(valor.replace('Z','+00:00')).replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
-    except Exception: return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    """Converte uma data ISO do celular para o horário oficial de Brasília."""
+    try:
+        data = datetime.fromisoformat(valor.replace('Z', '+00:00'))
+        if data.tzinfo is not None:
+            data = data.astimezone(FUSO_BRASIL)
+        return data.replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
+    except (ValueError, TypeError, AttributeError):
+        return agora_banco()
 
 @app.route('/api/offline_snapshot')
 def offline_snapshot():
@@ -1006,137 +1379,28 @@ def offline_snapshot():
     conf={'perfil':session.get('perfil','funcionario'),'nome':cfg['nome'],'cnpj':cfg['cnpj'] or '','endereco':cfg['endereco'] or '','telefone':cfg['telefone'] or '','horario':cfg['horario'] or '','mensagem':cfg['mensagem'] or '','impressora':cfg['impressora_status'] or '','diaria':cfg['valor_diaria'],'van':cfg['valor_van'],'pernoite':cfg['valor_pernoite'],'hora':cfg['valor_hora'],'fracao':cfg['valor_fracao'],'minutos_fracao':cfg['minutos_fracao'],'taxa_talao':cfg['taxa_talao'],'placas_mensalistas':[m['placa'].upper() for m in mensais],'logo':cfg['logo'] or ''}
     conn.close(); return {'empresa_chave':emp['codigo'],'veiculos':vs,'config':conf}
 
-@app.route('/api/sincronizar', methods=['POST'])
+@app.route('/api/sincronizar',methods=['POST'])
 def sincronizar_offline():
-    if 'empresa_id' not in session:
-        return {'ok': False, 'confirmado': False, 'erro': 'login'}, 401
-
-    corpo = request.get_json(silent=True) or {}
-    operacoes = corpo.get('operacoes', [])
-    eid = session['empresa_id']
-    conn = obter_conexao()
-    emp = conn.execute('SELECT codigo FROM empresas WHERE id=?', (eid,)).fetchone()
-
-    if not emp or corpo.get('empresa_chave') != emp['codigo']:
-        conn.close()
-        return {'ok': False, 'confirmado': False, 'erro': 'empresa'}, 403
-
-    offline_ids_entrada = []
+    if 'empresa_id' not in session:return {'ok':False,'erro':'login'},401
+    corpo=request.get_json(silent=True) or {}; eid=session['empresa_id']; conn=obter_conexao(); emp=conn.execute('SELECT codigo FROM empresas WHERE id=?',(eid,)).fetchone()
+    if not emp or corpo.get('empresa_chave')!=emp['codigo']:conn.close();return {'ok':False,'erro':'empresa'},403
     try:
-        for op in operacoes:
-            a = op.get('acao')
-            d = op.get('dados', {}) or {}
-
-            if a == 'entrada' and d.get('offline_id'):
-                oid = str(d['offline_id'])
-                offline_ids_entrada.append(oid)
-                placa = str(d.get('placa', '')).upper().strip()
-                if not placa:
-                    raise ValueError('entrada offline sem placa')
-
-                ja_existe = conn.execute(
-                    'SELECT id FROM veiculos WHERE empresa_id=? AND offline_id=?',
-                    (eid, oid)
-                ).fetchone()
-
-                if not ja_existe:
-                    conn.execute(
-                        '''INSERT INTO veiculos
-                           (empresa_id,offline_id,placa,modelo,cor,valor,tipo_tarifa,numero_talao,hora_entrada,status)
-                           VALUES (?,?,?,?,?,?,?,?,?,?)''',
-                        (eid, oid, placa, d.get('modelo',''), d.get('cor',''),
-                         float(d.get('valor',0) or 0), d.get('tipo_tarifa','diaria'),
-                         d.get('numero_talao',''), iso_para_banco(d.get('hora_entrada','')), 'ATIVO')
-                    )
-                    registrar_auditoria(conn, 'SYNC_ENTRADA', f'Placa {placa} - offline {oid}')
-
-            elif a == 'saida' and d.get('offline_id'):
-                oid = str(d['offline_id'])
-                hs = iso_para_banco(d.get('hora_saida',''))
-                total = float(d.get('valor_total',0) or 0)
-                pag = d.get('forma_pagamento','Dinheiro')
-                desc = float(d.get('desconto',0) or 0)
-                perdido = int(d.get('talao_perdido',0) or 0)
-                vid = None
-
-                if oid.startswith('servidor-') and oid[9:].isdigit():
-                    vid = int(oid[9:])
-                    conn.execute(
-                        "UPDATE veiculos SET status='FINALIZADO',hora_saida=?,valor_total=?,forma_pagamento=?,desconto=?,talao_perdido=? WHERE id=? AND empresa_id=?",
-                        (hs,total,pag,desc,perdido,vid,eid)
-                    )
+        for op in corpo.get('operacoes',[]):
+            a,d=op.get('acao'),op.get('dados',{})
+            if a=='entrada' and d.get('offline_id'):
+                conn.execute('''INSERT INTO veiculos(empresa_id,offline_id,placa,modelo,cor,valor,tipo_tarifa,numero_talao,hora_entrada,status) SELECT ?,?,?,?,?,?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM veiculos WHERE empresa_id=? AND offline_id=?)''',(eid,d['offline_id'],d.get('placa','').upper(),d.get('modelo',''),d.get('cor',''),float(d.get('valor',0)),d.get('tipo_tarifa','diaria'),d.get('numero_talao',''),iso_para_banco(d.get('hora_entrada','')),'ATIVO',eid,d['offline_id']))
+            elif a=='saida' and d.get('offline_id'):
+                oid=d['offline_id']; hs=iso_para_banco(d.get('hora_saida','')); total=float(d.get('valor_total',0));pag=d.get('forma_pagamento','Dinheiro');desc=float(d.get('desconto',0));perdido=int(d.get('talao_perdido',0));vid=None
+                if oid.startswith('servidor-') and oid[9:].isdigit():vid=int(oid[9:]);conn.execute("UPDATE veiculos SET status='FINALIZADO',hora_saida=?,valor_total=?,forma_pagamento=?,desconto=?,talao_perdido=? WHERE id=? AND empresa_id=?",(hs,total,pag,desc,perdido,vid,eid))
                 else:
-                    row = conn.execute(
-                        'SELECT id FROM veiculos WHERE offline_id=? AND empresa_id=?',
-                        (oid,eid)
-                    ).fetchone()
-                    vid = row['id'] if row else None
-                    if vid:
-                        conn.execute(
-                            "UPDATE veiculos SET status='FINALIZADO',hora_saida=?,valor_total=?,forma_pagamento=?,desconto=?,talao_perdido=? WHERE id=? AND empresa_id=?",
-                            (hs,total,pag,desc,perdido,vid,eid)
-                        )
-
-                if vid and total > 0 and not conn.execute(
-                    "SELECT 1 FROM movimentos_caixa WHERE empresa_id=? AND veiculo_id=? AND tipo='RECEITA'",
-                    (eid,vid)
-                ).fetchone():
-                    caixa = obter_caixa_aberto(conn)
-                    conn.execute(
-                        'INSERT INTO movimentos_caixa(empresa_id,caixa_id,usuario_id,veiculo_id,tipo,descricao,valor,forma_pagamento,criado_em) VALUES(?,?,?,?,?,?,?,?,?)',
-                        (eid, caixa['id'] if caixa else None, session.get('usuario_id'), vid,
-                         'RECEITA', 'Saída offline', total, pag, hs)
-                    )
-                if vid:
-                    registrar_auditoria(conn, 'SYNC_SAIDA', f'Offline {oid} - R$ {total:.2f}')
-
-            elif a == 'config' and session.get('perfil') == 'admin':
-                conn.execute(
-                    '''UPDATE configuracoes SET nome=?,cnpj=?,endereco=?,telefone=?,horario=?,mensagem=?,
-                       impressora_status=?,valor_diaria=?,valor_van=?,valor_pernoite=?,logo=? WHERE empresa_id=?''',
-                    (d.get('nome','GLPPARK'), d.get('cnpj',''), d.get('endereco',''), d.get('telefone',''),
-                     d.get('horario',''), d.get('mensagem',''), d.get('impressora',''),
-                     float(d.get('diaria',50) or 0), float(d.get('van',30) or 0),
-                     float(d.get('pernoite',40) or 0), d.get('logo',''), eid)
-                )
-
+                    row=conn.execute("SELECT id FROM veiculos WHERE offline_id=? AND empresa_id=?",(oid,eid)).fetchone();vid=row['id'] if row else None;conn.execute("UPDATE veiculos SET status='FINALIZADO',hora_saida=?,valor_total=?,forma_pagamento=?,desconto=?,talao_perdido=? WHERE offline_id=? AND empresa_id=?",(hs,total,pag,desc,perdido,oid,eid))
+                if vid and total>0 and not conn.execute("SELECT 1 FROM movimentos_caixa WHERE empresa_id=? AND veiculo_id=? AND tipo='RECEITA'",(eid,vid)).fetchone():
+                    caixa=obter_caixa_aberto(conn);conn.execute("INSERT INTO movimentos_caixa(empresa_id,caixa_id,usuario_id,veiculo_id,tipo,descricao,valor,forma_pagamento,criado_em) VALUES(?,?,?,?,?,?,?,?,?)",(eid,caixa['id'] if caixa else None,session.get('usuario_id'),vid,'RECEITA','Saída offline',total,pag,hs))
+            elif a=='config' and session.get('perfil')=='admin':
+                conn.execute('''UPDATE configuracoes SET nome=?,cnpj=?,endereco=?,telefone=?,horario=?,mensagem=?,impressora_status=?,valor_diaria=?,valor_van=?,valor_pernoite=?,logo=? WHERE empresa_id=?''',(d.get('nome','GLPPARK'),d.get('cnpj',''),d.get('endereco',''),d.get('telefone',''),d.get('horario',''),d.get('mensagem',''),d.get('impressora',''),float(d.get('diaria',50)),float(d.get('van',30)),float(d.get('pernoite',40)),d.get('logo',''),eid))
         conn.commit()
-
-        faltando = []
-        for oid in offline_ids_entrada:
-            if not conn.execute(
-                'SELECT 1 FROM veiculos WHERE empresa_id=? AND offline_id=?',
-                (eid, oid)
-            ).fetchone():
-                faltando.append(oid)
-
-        if faltando:
-            conn.close()
-            return {'ok': False, 'confirmado': False, 'erro': 'gravação não confirmada', 'faltando': faltando}, 500
-
-        ativos = conn.execute(
-            "SELECT * FROM veiculos WHERE empresa_id=? AND status='ATIVO' ORDER BY id DESC",
-            (eid,)
-        ).fetchall()
-        veiculos_ativos = [
-            {
-                'offline_id': v['offline_id'] or 'servidor-' + str(v['id']),
-                'placa': v['placa'], 'modelo': v['modelo'] or '', 'cor': v['cor'] or '',
-                'valor': v['valor'] or 0, 'tipo_tarifa': v['tipo_tarifa'] or 'diaria',
-                'numero_talao': v['numero_talao'] or '', 'hora_entrada': v['hora_entrada'],
-                'status': 'ATIVO'
-            } for v in ativos
-        ]
-        conn.close()
-        return {
-            'ok': True, 'confirmado': True, 'sincronizadas': len(operacoes),
-            'veiculos_ativos': veiculos_ativos
-        }
-
-    except Exception as e:
-        conn.rollback()
-        conn.close()
-        return {'ok': False, 'confirmado': False, 'erro': str(e)}, 400
+    except Exception as e:conn.rollback();conn.close();return {'ok':False,'erro':str(e)},400
+    conn.close();return {'ok':True,'sincronizadas':len(corpo.get('operacoes',[]))}
 
 @app.route('/logout')
 def logout():
