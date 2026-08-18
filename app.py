@@ -186,7 +186,7 @@ HTML_LOGIN = """
             </div>
             <button type="submit" class="btn btn-primary w-100 mb-2">Entrar</button>
         </form>
-        <div class="text-center mt-3"><a href="/cadastro" class="text-decoration-none small fw-bold">Criar Cadastro Novo</a></div>
+        <div class="text-center mt-3"><a href="mailto:guilhermelucenaibnf@gmail.com?subject=Solicitar%20acesso%20ao%20GLPPARK" class="text-decoration-none small fw-bold">Solicitar acesso ao GLPPARK</a></div>
         <div class="text-center mt-2"><a href="/politica-privacidade" class="text-decoration-none small text-secondary">Política de Privacidade</a></div>
     </div>
 </body>
