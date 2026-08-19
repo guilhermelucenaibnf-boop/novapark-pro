@@ -323,46 +323,11 @@ HTML_DASHBOARD = """
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
         .btn-grid { height: 75px; font-weight: bold; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 6px; border: none; width: 100%; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-@media print {
-    @page {
-        size: 58mm auto;
-        margin: 0;
-    }
-
-    html, body {
-        width: 58mm !important;
-        height: auto !important;
-        min-height: 0 !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        overflow: visible !important;
-    }
-
-    body * {
-        visibility: hidden;
-    }
-
-    #printableArea,
-    #printableArea * {
-        visibility: visible;
-    }
-
-    #printableArea {
-        position: fixed !important;
-        left: 0 !important;
-        top: 0 !important;
-        width: 58mm !important;
-        height: auto !important;
-        min-height: 0 !important;
-        margin: 0 !important;
-        padding: 2mm !important;
-        box-sizing: border-box;
-        font-family: monospace;
-        text-align: center;
-        overflow: visible !important;
-    }
-}
-  
+        @media print {
+            body * { visibility: hidden; }
+            #printableArea, #printableArea * { visibility: visible; }
+            #printableArea { position: absolute; left: 0; top: 0; width: 100%; font-family: monospace; }
+        }
     </style>
 </head>
 <body class="bg-light">
@@ -463,7 +428,7 @@ HTML_DASHBOARD = """
         <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-body text-center bg-white p-4">
             
             <div id="printableArea">
-                {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="width:28px; height:28px; object-fit:contain; display:block; margin:0 auto 4px auto;">{% endif %}
+                {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="max-height:55px; max-width:160px; object-fit:contain; margin-bottom:5px;"><br>{% endif %}
                 <h5 class="fw-bold mb-1">{{ cfg.nome }}</h5>
                 <p class="small mb-1">CNPJ: {{ cfg.cnpj }}</p>
                 <p class="small mb-1">{{ cfg.endereco }}</p>
@@ -491,9 +456,7 @@ HTML_DASHBOARD = """
             <script>
                 document.addEventListener("DOMContentLoaded", function() {
                     new QRCode(document.getElementById("qrcodeEntrada"), { text: `{{ qr_entrada|safe }}`, width: 140, height: 140 });
-                    setTimeout(function() {
-    window.print();
-}, 500);
+                    window.print();
                 });
             </script>
             <button type="button" class="btn btn-success w-100 mt-2" onclick="window.location.replace('/dashboard')">OK / Concluir</button>
@@ -1062,42 +1025,18 @@ def entrada():
         if mensalista:
             tipo_tarifa, valor = 'mensalista', 0.0
         ja_ativo = conn.execute(
-            """SELECT id, placa, modelo, cor, numero_talao, hora_entrada
-               FROM veiculos
-               WHERE empresa_id=? AND UPPER(TRIM(placa))=? AND status='ATIVO'
-               LIMIT 1""",
-            (session['empresa_id'], placa)
+            "SELECT id FROM veiculos WHERE empresa_id=? AND placa=? AND status='ATIVO'", (session['empresa_id'], placa)
         ).fetchone()
-
         if ja_ativo:
             conn.close()
-            return f"""
-            <div style="font-family:Arial; padding:25px; text-align:center;">
-                <h2 style="color:#dc3545;">⚠️ VEÍCULO JÁ ESTÁ NO PÁTIO</h2>
+            return f"<h3>O veículo {placa} já está no pátio.</h3><a href='/dashboard'>Voltar</a>"
 
-                <p><strong>Placa:</strong> {ja_ativo['placa']}</p>
-                <p><strong>Modelo:</strong> {ja_ativo['modelo']}</p>
-                <p><strong>Cor:</strong> {ja_ativo['cor']}</p>
-                <p><strong>Talão:</strong> {ja_ativo['numero_talao']}</p>
-                <p><strong>Entrada:</strong> {ja_ativo['hora_entrada']}</p>
-
-                <p>Não é possível registrar outra entrada com esta placa
-                enquanto o veículo estiver ativo no pátio.</p>
-
-                <a href="/dashboard"
-                   style="display:inline-block;padding:12px 25px;
-                          background:#0d6efd;color:white;
-                          text-decoration:none;border-radius:8px;">
-                    Voltar
-                </a>
-            </div>
-            """
-    numero_talao = request.form.get('numero_talao', '').strip()
-    talao_em_uso = conn.execute(
+        numero_talao = request.form.get('numero_talao', '').strip()
+        talao_em_uso = conn.execute(
             "SELECT 1 FROM veiculos WHERE empresa_id=? AND numero_talao=?", (session['empresa_id'], numero_talao)
         ).fetchone() if numero_talao else True
-    if talao_em_uso:
-        numero_talao = gerar_numero_talao(conn)
+        if talao_em_uso:
+            numero_talao = gerar_numero_talao(conn)
 
         conn.execute(
             """INSERT INTO veiculos
@@ -1113,7 +1052,7 @@ def entrada():
         talao_atual = numero_talao
         qr_texto = f"PLACA:{placa}|TALAO:{numero_talao}|ENTRADA:{hora}"
         
-     return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, qr_entrada=qr_texto, placa_recente=placa, modelo_recente=modelo, cor_recente=cor, valor_recente=valor, tipo_tarifa_recente=tipo_tarifa, saida_recente=None, recurso_liberado=recurso_liberado, empresa_vencimento='', aviso_vencimento='')
+        return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, qr_entrada=qr_texto, placa_recente=placa, modelo_recente=modelo, cor_recente=cor, valor_recente=valor, tipo_tarifa_recente=tipo_tarifa, saida_recente=None, recurso_liberado=recurso_liberado, empresa_vencimento='', aviso_vencimento='')
     
     return redirect(url_for('dashboard'))
 
