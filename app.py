@@ -1092,7 +1092,7 @@ if ja_ativo:
         </a>
     </div>
     """
-        numero_talao = request.form.get('numero_talao', '').strip()
+    numero_talao = request.form.get('numero_talao', '').strip()
         talao_em_uso = conn.execute(
             "SELECT 1 FROM veiculos WHERE empresa_id=? AND numero_talao=?", (session['empresa_id'], numero_talao)
         ).fetchone() if numero_talao else True
