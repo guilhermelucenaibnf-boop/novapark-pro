@@ -1113,7 +1113,7 @@ def entrada():
         talao_atual = numero_talao
         qr_texto = f"PLACA:{placa}|TALAO:{numero_talao}|ENTRADA:{hora}"
         
-        return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, qr_entrada=qr_texto, placa_recente=placa, modelo_recente=modelo, cor_recente=cor, valor_recente=valor, tipo_tarifa_recente=tipo_tarifa, saida_recente=None, recurso_liberado=recurso_liberado, empresa_vencimento='', aviso_vencimento='')
+     return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, qr_entrada=qr_texto, placa_recente=placa, modelo_recente=modelo, cor_recente=cor, valor_recente=valor, tipo_tarifa_recente=tipo_tarifa, saida_recente=None, recurso_liberado=recurso_liberado, empresa_vencimento='', aviso_vencimento='')
     
     return redirect(url_for('dashboard'))
 
