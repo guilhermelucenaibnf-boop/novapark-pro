@@ -491,7 +491,9 @@ HTML_DASHBOARD = """
             <script>
                 document.addEventListener("DOMContentLoaded", function() {
                     new QRCode(document.getElementById("qrcodeEntrada"), { text: `{{ qr_entrada|safe }}`, width: 140, height: 140 });
-                    window.print();
+                    setTimeout(function() {
+    window.print();
+}, 500);
                 });
             </script>
             <button type="button" class="btn btn-success w-100 mt-2" onclick="window.location.replace('/dashboard')">OK / Concluir</button>
