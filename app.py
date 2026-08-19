@@ -1096,8 +1096,8 @@ if ja_ativo:
     talao_em_uso = conn.execute(
             "SELECT 1 FROM veiculos WHERE empresa_id=? AND numero_talao=?", (session['empresa_id'], numero_talao)
         ).fetchone() if numero_talao else True
-        if talao_em_uso:
-            numero_talao = gerar_numero_talao(conn)
+    if talao_em_uso:
+    numero_talao = gerar_numero_talao(conn)
 
         conn.execute(
             """INSERT INTO veiculos
