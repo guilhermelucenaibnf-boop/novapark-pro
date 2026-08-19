@@ -323,16 +323,19 @@ HTML_DASHBOARD = """
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
         .btn-grid { height: 75px; font-weight: bold; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 6px; border: none; width: 100%; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-      @media print {
+@media print {
     @page {
         size: 58mm auto;
         margin: 0;
     }
 
     html, body {
-        width: 58mm;
+        width: 58mm !important;
+        height: auto !important;
+        min-height: 0 !important;
         margin: 0 !important;
         padding: 0 !important;
+        overflow: visible !important;
     }
 
     body * {
@@ -345,17 +348,21 @@ HTML_DASHBOARD = """
     }
 
     #printableArea {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 58mm;
-        margin: 0;
-        padding: 2mm;
+        position: absolute !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 58mm !important;
+        height: auto !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 2mm !important;
         box-sizing: border-box;
         font-family: monospace;
         text-align: center;
+        overflow: visible !important;
     }
-}  
+}
+  
     </style>
 </head>
 <body class="bg-light">
