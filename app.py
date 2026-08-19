@@ -1061,7 +1061,7 @@ def entrada():
         mensalista = conn.execute("SELECT id FROM mensalistas WHERE empresa_id=? AND UPPER(placa)=? AND ativo=1", (session['empresa_id'], placa)).fetchone()
         if mensalista:
             tipo_tarifa, valor = 'mensalista', 0.0
-        ja_ativo = conn.execute(
+    ja_ativo = conn.execute(
     """SELECT id, placa, modelo, cor, numero_talao, hora_entrada
        FROM veiculos
        WHERE empresa_id=? AND UPPER(TRIM(placa))=? AND status='ATIVO'
