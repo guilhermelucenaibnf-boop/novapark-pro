@@ -348,7 +348,7 @@ HTML_DASHBOARD = """
     }
 
     #printableArea {
-        position: absolute !important;
+        position: fixed !important;
         left: 0 !important;
         top: 0 !important;
         width: 58mm !important;
