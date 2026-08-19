@@ -1062,36 +1062,36 @@ def entrada():
         if mensalista:
             tipo_tarifa, valor = 'mensalista', 0.0
     ja_ativo = conn.execute(
-    """SELECT id, placa, modelo, cor, numero_talao, hora_entrada
-       FROM veiculos
-       WHERE empresa_id=? AND UPPER(TRIM(placa))=? AND status='ATIVO'
-       LIMIT 1""",
-    (session['empresa_id'], placa)
-).fetchone()
+            """SELECT id, placa, modelo, cor, numero_talao, hora_entrada
+               FROM veiculos
+               WHERE empresa_id=? AND UPPER(TRIM(placa))=? AND status='ATIVO'
+               LIMIT 1""",
+            (session['empresa_id'], placa)
+        ).fetchone()
 
-if ja_ativo:
-    conn.close()
-    return f"""
-    <div style="font-family:Arial; padding:25px; text-align:center;">
-        <h2 style="color:#dc3545;">⚠️ VEÍCULO JÁ ESTÁ NO PÁTIO</h2>
+        if ja_ativo:
+            conn.close()
+            return f"""
+            <div style="font-family:Arial; padding:25px; text-align:center;">
+                <h2 style="color:#dc3545;">⚠️ VEÍCULO JÁ ESTÁ NO PÁTIO</h2>
 
-        <p><strong>Placa:</strong> {ja_ativo['placa']}</p>
-        <p><strong>Modelo:</strong> {ja_ativo['modelo']}</p>
-        <p><strong>Cor:</strong> {ja_ativo['cor']}</p>
-        <p><strong>Talão:</strong> {ja_ativo['numero_talao']}</p>
-        <p><strong>Entrada:</strong> {ja_ativo['hora_entrada']}</p>
+                <p><strong>Placa:</strong> {ja_ativo['placa']}</p>
+                <p><strong>Modelo:</strong> {ja_ativo['modelo']}</p>
+                <p><strong>Cor:</strong> {ja_ativo['cor']}</p>
+                <p><strong>Talão:</strong> {ja_ativo['numero_talao']}</p>
+                <p><strong>Entrada:</strong> {ja_ativo['hora_entrada']}</p>
 
-        <p>Não é possível registrar outra entrada com esta placa
-        enquanto o veículo estiver ativo no pátio.</p>
+                <p>Não é possível registrar outra entrada com esta placa
+                enquanto o veículo estiver ativo no pátio.</p>
 
-        <a href="/dashboard"
-           style="display:inline-block;padding:12px 25px;
-                  background:#0d6efd;color:white;
-                  text-decoration:none;border-radius:8px;">
-            Voltar
-        </a>
-    </div>
-    """
+                <a href="/dashboard"
+                   style="display:inline-block;padding:12px 25px;
+                          background:#0d6efd;color:white;
+                          text-decoration:none;border-radius:8px;">
+                    Voltar
+                </a>
+            </div>
+            """
     numero_talao = request.form.get('numero_talao', '').strip()
     talao_em_uso = conn.execute(
             "SELECT 1 FROM veiculos WHERE empresa_id=? AND numero_talao=?", (session['empresa_id'], numero_talao)
