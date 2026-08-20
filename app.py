@@ -429,7 +429,7 @@ HTML_DASHBOARD = """
             
             <div id="printableArea">
                 <div style="display:flex; align-items:center; justify-content:center; gap:6px; margin-bottom:4px;">
-                    {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="width:28px; height:28px; object-fit:contain; display:block; margin:0 auto 4px auto;">{% endif %}
+                    {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="width:28px; height:28px; object-fit:contain; display:block; flex:0 0 28px;">{% endif %}
                     <h5 class="fw-bold mb-0">{{ cfg.nome }}</h5>
                 </div>
                 <p class="small mb-1">CNPJ: {{ cfg.cnpj }}</p>
@@ -461,7 +461,7 @@ HTML_DASHBOARD = """
                     {% if auto_imprimir|default(true) %}window.print();{% endif %}
                 });
             </script>
-            <button type="button" class="btn btn-dark w-100 mt-2" onclick="window.print()">🖨️ Imprimir comprovante</button>
+            {% if not origem_patio|default(false) %}<button type="button" class="btn btn-dark w-100 mt-2" onclick="window.print()">🖨️ Imprimir novamente</button>{% endif %}
             <button type="button" class="btn btn-success w-100 mt-2" onclick="window.location.replace('/dashboard')">OK / Concluir</button>
         </div></div></div>
     </div>
@@ -474,7 +474,7 @@ HTML_DASHBOARD = """
             
             <div id="printableArea">
                 <div style="display:flex; align-items:center; justify-content:center; gap:6px; margin-bottom:4px;">
-                    {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="width:28px; height:28px; object-fit:contain; display:block; margin:0 auto 4px auto;">{% endif %}
+                    {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="width:28px; height:28px; object-fit:contain; display:block; flex:0 0 28px;">{% endif %}
                     <h5 class="fw-bold mb-0">{{ cfg.nome }}</h5>
                 </div>
                 <p class="small mb-1">CNPJ: {{ cfg.cnpj }}</p>
@@ -1418,13 +1418,6 @@ def sincronizar_offline():
     try:
         for op in corpo.get('operacoes',[]):
             a,d=op.get('acao'),op.get('dados',{})
-            if a == 'entrada' and d.get('offline_id'):
-                offline_id = d['offline_id']
-                existente = conn.execute(
-                    "SELECT id FROM veiculos WHERE empresa_id=? AND offline_id=? LIMIT 1",
-                    (eid, offline_id)
-                ).fetchone()
-                if not existente:
-                    conn.execute(
-          
+            if a=='entrada' and d.get('offline_id'):
+                conn.execute('''INSERT INTO veiculos empresa_id,offline_id,placa,modelo,cor,valor,tipo_tarifa,numero_talao,hora_entrada,status) SELECT ?,?,?,?,?,?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM veiculos WHERE empresa_id=? AND offline_id=?)''',(eid,d['offline_id'],d.get('placa','').uppe
 Prévia truncada devido ao tamanho do arquivo
