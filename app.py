@@ -326,7 +326,7 @@ HTML_DASHBOARD = """
         @media print {
             body * { visibility: hidden; }
             #printableArea, #printableArea * { visibility: visible; }
-            #printableArea { position: fixed !important; left: 0; top: 0; width: 100%; font-family: monospace; }
+            #printableArea { position: absolute; left: 0; top: 0; width: 100%; font-family: monospace; }
         }
     </style>
 </head>
@@ -358,10 +358,10 @@ HTML_DASHBOARD = """
             {% if recurso_liberado('caixa') %}<div class="col-6"><button class="btn-grid" style="background-color: #e67e22;" data-bs-toggle="modal" data-bs-target="#mCaixa">📦 CAIXA</button></div>{% endif %}
             {% if recurso_liberado('estatisticas') %}<div class="col-6"><button class="btn-grid" style="background-color: #8e44ad;" data-bs-toggle="modal" data-bs-target="#mEstatisticas">📊 ESTATÍSTICAS</button></div>{% endif %}
             {% if recurso_liberado('anuncios') %}<div class="col-12"><button class="btn-grid bg-primary" data-bs-toggle="modal" data-bs-target="#mAnuncios">📢 ANÚNCIOS</button></div>{% endif %}
+            {% if recurso_liberado('mensalistas') %}<div class="col-6"><button class="btn-grid bg-success" onclick="location.href='/mensalistas'">👤 MENSALISTAS</button></div>{% endif %}
             {% if recurso_liberado('financeiro') %}<div class="col-6"><button class="btn-grid bg-dark" onclick="location.href='/financeiro'">💰 FINANCEIRO</button></div>{% endif %}
             {% if recurso_liberado('relatorios') %}<div class="col-12"><button class="btn-grid" style="background:#0d6efd" onclick="location.href='/relatorios'">📄 RELATÓRIOS</button></div>{% endif %}
             {% endif %}
-            {% if recurso_liberado('mensalistas') %}<div class="col-6"><button class="btn-grid bg-success" onclick="location.href='/mensalistas'">👤 MENSALISTAS</button></div>{% endif %}
         </div>
     </div>
 
@@ -428,10 +428,8 @@ HTML_DASHBOARD = """
         <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-body text-center bg-white p-4">
             
             <div id="printableArea">
-                <div style="display:flex; align-items:center; justify-content:center; gap:6px; margin-bottom:4px;">
-                    {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="width:28px; height:28px; object-fit:contain; display:block; flex:0 0 28px;">{% endif %}
-                    <h5 class="fw-bold mb-0">{{ cfg.nome }}</h5>
-                </div>
+                {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="max-height:55px; max-width:160px; object-fit:contain; margin-bottom:5px;"><br>{% endif %}
+                <h5 class="fw-bold mb-1">{{ cfg.nome }}</h5>
                 <p class="small mb-1">CNPJ: {{ cfg.cnpj }}</p>
                 <p class="small mb-1">{{ cfg.endereco }}</p>
                 <p class="small mb-2">Tel: {{ cfg.telefone }}</p>
@@ -441,7 +439,7 @@ HTML_DASHBOARD = """
                 <p class="small mb-1">Placa: <strong>{{ placa_recente }}</strong></p>
                 <p class="small mb-1">Modelo: {{ modelo_recente }} | Cor: {{ cor_recente }}</p>
                 <p class="small mb-1">Entrada: {{ qr_entrada.split('|')[-1].replace('ENTRADA:', '') }}</p>
-                <p class="small mb-1">Tarifa: {% if tipo_tarifa_recente == 'van' %}Van/Caminhonete{% else %}{{ tipo_tarifa_recente|title }}{% endif %}</p>
+                <p class="small mb-1">Tarifa: {{ tipo_tarifa_recente|title }}</p>
                 <p class="small mb-2">Valor da tarifa: R$ {{ "%.2f"|format(valor_recente) }}</p>
                 <div id="qrcodeEntrada" class="d-flex justify-content-center my-3"></div>
                 <p class="small mb-2"><strong>Mensagem:</strong> {{ cfg.mensagem }}</p>
@@ -458,10 +456,9 @@ HTML_DASHBOARD = """
             <script>
                 document.addEventListener("DOMContentLoaded", function() {
                     new QRCode(document.getElementById("qrcodeEntrada"), { text: `{{ qr_entrada|safe }}`, width: 140, height: 140 });
-                    {% if auto_imprimir|default(true) %}window.print();{% endif %}
+                    window.print();
                 });
             </script>
-            {% if not origem_patio|default(false) %}<button type="button" class="btn btn-dark w-100 mt-2" onclick="window.print()">🖨️ Imprimir novamente</button>{% endif %}
             <button type="button" class="btn btn-success w-100 mt-2" onclick="window.location.replace('/dashboard')">OK / Concluir</button>
         </div></div></div>
     </div>
@@ -473,10 +470,8 @@ HTML_DASHBOARD = """
         <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-body text-center bg-white p-4">
             
             <div id="printableArea">
-                <div style="display:flex; align-items:center; justify-content:center; gap:6px; margin-bottom:4px;">
-                    {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="width:28px; height:28px; object-fit:contain; display:block; flex:0 0 28px;">{% endif %}
-                    <h5 class="fw-bold mb-0">{{ cfg.nome }}</h5>
-                </div>
+                {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="max-height:55px; max-width:160px; object-fit:contain; margin-bottom:5px;"><br>{% endif %}
+                <h5 class="fw-bold mb-1">{{ cfg.nome }}</h5>
                 <p class="small mb-1">CNPJ: {{ cfg.cnpj }}</p>
                 <p class="small mb-1">{{ cfg.endereco }}</p>
                 <p class="small mb-2">Tel: {{ cfg.telefone }}</p>
@@ -485,9 +480,7 @@ HTML_DASHBOARD = """
                 <p class="small mb-1">Placa: <strong>{{ saida_recente.placa }}</strong></p>
                 <p class="small mb-1">Entrada: {{ saida_recente.hora_entrada }}</p>
                 <p class="small mb-1">Saída: {{ saida_recente.hora_saida }}</p>
-                <p class="small mb-1">Tarifa: {% if saida_recente.tipo_tarifa == 'van' %}Van/Caminhonete{% else %}{{ saida_recente.tipo_tarifa|default('diaria', true)|title }}{% endif %}</p>
-                {% if saida_recente.talao_perdido %}<p class="small mb-1"><strong>Taxa por perda do talão:</strong> R$ {{ "%.2f"|format(cfg.taxa_talao) }}</p>{% endif %}
-                {% if saida_recente.desconto and saida_recente.desconto > 0 %}<p class="small mb-1"><strong>Desconto:</strong> - R$ {{ "%.2f"|format(saida_recente.desconto) }}</p>{% endif %}
+                <p class="small mb-1">Tarifa: {{ saida_recente.tipo_tarifa|default('diaria', true)|title }}</p>
                 <p class="fs-5 fw-bold text-success my-2">Total a Pagar: R$ {{ "%.2f"|format(saida_recente.valor_total) }}</p>
                 <p class="small mb-2"><strong>Mensagem:</strong> {{ cfg.mensagem }}</p>
                 {% if anuncios %}
@@ -553,7 +546,7 @@ HTML_DASHBOARD = """
                 <a href="/excluir/{{ c.id }}" class="btn btn-danger btn-sm">X</a>
             </form>
             {% else %}<p class="mb-1"><strong>{{ c.placa }}</strong> — {{ c.modelo }}</p>{% endif %}
-            <a href="/reimprimir/{{ c.id }}" class="btn btn-info btn-sm w-100 text-white fw-bold">👁️ Visualizar Comprovante QR Code</a>
+            <a href="/reimprimir/{{ c.id }}" class="btn btn-info btn-sm w-100 text-white fw-bold">🖨️ Ver / Imprimir Comprovante QR Code</a>
         </div>
         {% else %}<p class="text-muted">Pátio vazio.</p>{% endfor %}
         <button type="button" class="btn btn-secondary w-100 mt-3" data-bs-dismiss="modal">Fechar</button>
@@ -1084,7 +1077,7 @@ def reimprimir(id):
         return redirect(url_for('dashboard'))
 
     qr_texto = f"PLACA:{v['placa']}|TALAO:{talao_atual}|ENTRADA:{v['hora_entrada']}"
-    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, qr_entrada=qr_texto, placa_recente=v['placa'], modelo_recente=v['modelo'], cor_recente=v['cor'], valor_recente=v['valor'], tipo_tarifa_recente=v['tipo_tarifa'] or 'diaria', saida_recente=None, recurso_liberado=recurso_liberado, empresa_vencimento='', aviso_vencimento='', auto_imprimir=False, origem_patio=True)
+    return render_template_string(HTML_DASHBOARD, cfg=cfg, anuncios=anuncios, ativos=ativos, concluidos=concluidos, talao_atual=talao_atual, qr_entrada=qr_texto, placa_recente=v['placa'], modelo_recente=v['modelo'], cor_recente=v['cor'], valor_recente=v['valor'], tipo_tarifa_recente=v['tipo_tarifa'] or 'diaria', saida_recente=None, recurso_liberado=recurso_liberado, empresa_vencimento='', aviso_vencimento='')
 
 @app.route('/saida_scanner', methods=['POST'])
 def saida_scanner():
@@ -1266,41 +1259,17 @@ def somente_admin(): return 'email' in session and session.get('perfil') == 'adm
 
 @app.route('/mensalistas', methods=['GET','POST'])
 def mensalistas():
-    if 'email' not in session: return redirect(url_for('login'))
+    if not somente_admin(): return redirect(url_for('dashboard'))
     bloqueio = exigir_recurso('mensalistas')
     if bloqueio: return bloqueio
     conn=obter_conexao(); eid=session['empresa_id']
     if request.method=='POST':
-        valor_mensal = float(request.form.get('valor_mensal',0) or 0) if somente_admin() else 0.0
-        dia_vencimento = int(request.form.get('dia_vencimento',10) or 10) if somente_admin() else 10
-        conn.execute("INSERT INTO mensalistas(empresa_id,nome,documento,telefone,placa,modelo,valor_mensal,dia_vencimento,ativo) VALUES(?,?,?,?,?,?,?,?,1)",(eid,request.form['nome'],request.form.get('documento',''),request.form.get('telefone',''),request.form['placa'].upper().strip(),request.form.get('modelo',''),valor_mensal,dia_vencimento))
+        conn.execute("INSERT INTO mensalistas(empresa_id,nome,documento,telefone,placa,modelo,valor_mensal,dia_vencimento,ativo) VALUES(?,?,?,?,?,?,?,?,1)",(eid,request.form['nome'],request.form.get('documento',''),request.form.get('telefone',''),request.form['placa'].upper().strip(),request.form.get('modelo',''),float(request.form.get('valor_mensal',0)),int(request.form.get('dia_vencimento',10))))
         registrar_auditoria(conn,'CADASTRO_MENSALISTA',request.form['placa'].upper().strip());conn.commit()
     lista=conn.execute("SELECT * FROM mensalistas WHERE empresa_id=? ORDER BY ativo DESC,nome",(eid,)).fetchall();conn.close()
-    admin = somente_admin()
-    linhas=''.join(f'''<tr><td>{m['nome']}</td><td>{m['placa']}</td><td>R$ {float(m['valor_mensal']):.2f}</td><td>Dia {m['dia_vencimento']}</td><td>{'Ativo' if m['ativo'] else 'Inativo'}</td><td><a class="btn btn-sm btn-outline-primary me-1" href="/mensalista_editar/{m['id']}">Editar</a>{f'<a class="btn btn-sm btn-outline-danger" href="/mensalista_status/{m["id"]}">Ativar/Inativar</a>' if admin else ''}</td></tr>''' for m in lista)
-    campos_financeiros = '''<div class="col-md-2"><input class="form-control" type="number" step=".01" name="valor_mensal" placeholder="Valor"></div><div class="col-md-2"><input class="form-control" type="number" min="1" max="31" name="dia_vencimento" value="10"></div>''' if admin else ''
-    conteudo=f'''<div class="card p-3 shadow-sm mb-3"><h4>Novo mensalista</h4><form method="post"><div class="row g-2"><div class="col-md-6"><input class="form-control" name="nome" placeholder="Nome completo" required></div><div class="col-md-3"><input class="form-control" name="documento" placeholder="CPF/CNPJ"></div><div class="col-md-3"><input class="form-control" name="telefone" placeholder="Telefone"></div><div class="col-md-4"><input class="form-control text-uppercase" name="placa" placeholder="Placa" required></div><div class="col-md-4"><input class="form-control" name="modelo" placeholder="Modelo"></div>{campos_financeiros}</div><button class="btn btn-success w-100 mt-2">Cadastrar</button></form></div><div class="card p-3"><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Nome</th><th>Placa</th><th>Mensalidade</th><th>Vencimento</th><th>Status</th><th>Ação</th></tr></thead><tbody>{linhas or '<tr><td colspan="6">Nenhum mensalista.</td></tr>'}</tbody></table></div></div>'''
+    linhas=''.join(f'''<tr><td>{m['nome']}</td><td>{m['placa']}</td><td>R$ {float(m['valor_mensal']):.2f}</td><td>Dia {m['dia_vencimento']}</td><td>{'Ativo' if m['ativo'] else 'Inativo'}</td><td><a class="btn btn-sm btn-outline-danger" href="/mensalista_status/{m['id']}">Ativar/Inativar</a></td></tr>''' for m in lista)
+    conteudo=f'''<div class="card p-3 shadow-sm mb-3"><h4>Novo mensalista</h4><form method="post"><div class="row g-2"><div class="col-md-6"><input class="form-control" name="nome" placeholder="Nome completo" required></div><div class="col-md-3"><input class="form-control" name="documento" placeholder="CPF/CNPJ"></div><div class="col-md-3"><input class="form-control" name="telefone" placeholder="Telefone"></div><div class="col-md-4"><input class="form-control text-uppercase" name="placa" placeholder="Placa" required></div><div class="col-md-4"><input class="form-control" name="modelo" placeholder="Modelo"></div><div class="col-md-2"><input class="form-control" type="number" step=".01" name="valor_mensal" placeholder="Valor"></div><div class="col-md-2"><input class="form-control" type="number" min="1" max="31" name="dia_vencimento" value="10"></div></div><button class="btn btn-success w-100 mt-2">Cadastrar</button></form></div><div class="card p-3"><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Nome</th><th>Placa</th><th>Mensalidade</th><th>Vencimento</th><th>Status</th><th>Ação</th></tr></thead><tbody>{linhas or '<tr><td colspan="6">Nenhum mensalista.</td></tr>'}</tbody></table></div></div>'''
     return render_template_string(BASE_PRO,titulo='Mensalistas',conteudo=conteudo)
-
-@app.route('/mensalista_editar/<int:id>', methods=['GET','POST'])
-def mensalista_editar(id):
-    if 'email' not in session: return redirect(url_for('login'))
-    bloqueio = exigir_recurso('mensalistas')
-    if bloqueio: return bloqueio
-    conn=obter_conexao(); eid=session['empresa_id']
-    m=conn.execute("SELECT * FROM mensalistas WHERE id=? AND empresa_id=?",(id,eid)).fetchone()
-    if not m:
-        conn.close(); return redirect(url_for('mensalistas'))
-    if request.method=='POST':
-        if somente_admin():
-            conn.execute("UPDATE mensalistas SET nome=?,documento=?,telefone=?,placa=?,modelo=?,valor_mensal=?,dia_vencimento=? WHERE id=? AND empresa_id=?",(request.form['nome'],request.form.get('documento',''),request.form.get('telefone',''),request.form['placa'].upper().strip(),request.form.get('modelo',''),float(request.form.get('valor_mensal',0) or 0),int(request.form.get('dia_vencimento',10) or 10),id,eid))
-        else:
-            conn.execute("UPDATE mensalistas SET nome=?,documento=?,telefone=?,placa=?,modelo=? WHERE id=? AND empresa_id=?",(request.form['nome'],request.form.get('documento',''),request.form.get('telefone',''),request.form['placa'].upper().strip(),request.form.get('modelo',''),id,eid))
-        registrar_auditoria(conn,'EDICAO_MENSALISTA',str(id));conn.commit();conn.close();return redirect(url_for('mensalistas'))
-    admin=somente_admin()
-    financeiro=f'''<div class="col-md-6"><label>Valor mensal</label><input class="form-control" type="number" step=".01" name="valor_mensal" value="{float(m['valor_mensal']):.2f}"></div><div class="col-md-6"><label>Dia do vencimento</label><input class="form-control" type="number" min="1" max="31" name="dia_vencimento" value="{m['dia_vencimento']}"></div>''' if admin else ''
-    conteudo=f'''<div class="card p-3 shadow-sm"><h4>Editar mensalista</h4><form method="post"><div class="row g-2"><div class="col-md-6"><label>Nome</label><input class="form-control" name="nome" value="{m['nome']}" required></div><div class="col-md-6"><label>CPF/CNPJ</label><input class="form-control" name="documento" value="{m['documento'] or ''}"></div><div class="col-md-6"><label>Telefone</label><input class="form-control" name="telefone" value="{m['telefone'] or ''}"></div><div class="col-md-3"><label>Placa</label><input class="form-control text-uppercase" name="placa" value="{m['placa']}" required></div><div class="col-md-3"><label>Modelo</label><input class="form-control" name="modelo" value="{m['modelo'] or ''}"></div>{financeiro}</div><button class="btn btn-primary w-100 mt-3">Salvar alterações</button><a class="btn btn-secondary w-100 mt-2" href="/mensalistas">Cancelar</a></form></div>'''
-    conn.close();return render_template_string(BASE_PRO,titulo='Editar mensalista',conteudo=conteudo)
 
 @app.route('/mensalista_status/<int:id>')
 def mensalista_status(id):
@@ -1419,5 +1388,26 @@ def sincronizar_offline():
         for op in corpo.get('operacoes',[]):
             a,d=op.get('acao'),op.get('dados',{})
             if a=='entrada' and d.get('offline_id'):
-                conn.execute('''INSERT INTO veiculos empresa_id,offline_id,placa,modelo,cor,valor,tipo_tarifa,numero_talao,hora_entrada,status) SELECT ?,?,?,?,?,?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM veiculos WHERE empresa_id=? AND offline_id=?)''',(eid,d['offline_id'],d.get('placa','').uppe
-Prévia truncada devido ao tamanho do arquivo
+                conn.execute('''INSERT INTO veiculos(empresa_id,offline_id,placa,modelo,cor,valor,tipo_tarifa,numero_talao,hora_entrada,status) SELECT ?,?,?,?,?,?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM veiculos WHERE empresa_id=? AND offline_id=?)''',(eid,d['offline_id'],d.get('placa','').upper(),d.get('modelo',''),d.get('cor',''),float(d.get('valor',0)),d.get('tipo_tarifa','diaria'),d.get('numero_talao',''),iso_para_banco(d.get('hora_entrada','')),'ATIVO',eid,d['offline_id']))
+            elif a=='saida' and d.get('offline_id'):
+                oid=d['offline_id']; hs=iso_para_banco(d.get('hora_saida','')); total=float(d.get('valor_total',0));pag=d.get('forma_pagamento','Dinheiro');desc=float(d.get('desconto',0));perdido=int(d.get('talao_perdido',0));vid=None
+                if oid.startswith('servidor-') and oid[9:].isdigit():vid=int(oid[9:]);conn.execute("UPDATE veiculos SET status='FINALIZADO',hora_saida=?,valor_total=?,forma_pagamento=?,desconto=?,talao_perdido=? WHERE id=? AND empresa_id=?",(hs,total,pag,desc,perdido,vid,eid))
+                else:
+                    row=conn.execute("SELECT id FROM veiculos WHERE offline_id=? AND empresa_id=?",(oid,eid)).fetchone();vid=row['id'] if row else None;conn.execute("UPDATE veiculos SET status='FINALIZADO',hora_saida=?,valor_total=?,forma_pagamento=?,desconto=?,talao_perdido=? WHERE offline_id=? AND empresa_id=?",(hs,total,pag,desc,perdido,oid,eid))
+                if vid and total>0 and not conn.execute("SELECT 1 FROM movimentos_caixa WHERE empresa_id=? AND veiculo_id=? AND tipo='RECEITA'",(eid,vid)).fetchone():
+                    caixa=obter_caixa_aberto(conn);conn.execute("INSERT INTO movimentos_caixa(empresa_id,caixa_id,usuario_id,veiculo_id,tipo,descricao,valor,forma_pagamento,criado_em) VALUES(?,?,?,?,?,?,?,?,?)",(eid,caixa['id'] if caixa else None,session.get('usuario_id'),vid,'RECEITA','Saída offline',total,pag,hs))
+            elif a=='config' and session.get('perfil')=='admin':
+                conn.execute('''UPDATE configuracoes SET nome=?,cnpj=?,endereco=?,telefone=?,horario=?,mensagem=?,impressora_status=?,valor_diaria=?,valor_van=?,valor_pernoite=?,logo=? WHERE empresa_id=?''',(d.get('nome','GLPPARK'),d.get('cnpj',''),d.get('endereco',''),d.get('telefone',''),d.get('horario',''),d.get('mensagem',''),d.get('impressora',''),float(d.get('diaria',50)),float(d.get('van',30)),float(d.get('pernoite',40)),d.get('logo',''),eid))
+        conn.commit()
+    except Exception as e:conn.rollback();conn.close();return {'ok':False,'erro':str(e)},400
+    conn.close();return {'ok':True,'sincronizadas':len(corpo.get('operacoes',[]))}
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+inicializar_banco()
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
