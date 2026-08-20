@@ -326,7 +326,7 @@ HTML_DASHBOARD = """
         @media print {
             body * { visibility: hidden; }
             #printableArea, #printableArea * { visibility: visible; }
-            #printableArea { position: absolute; left: 0; top: 0; width: 100%; font-family: monospace; }
+            #printableArea { position: fixed !important; left: 0; top: 0; width: 100%; font-family: monospace; }
         }
     </style>
 </head>
@@ -428,7 +428,7 @@ HTML_DASHBOARD = """
         <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-body text-center bg-white p-4">
             
             <div id="printableArea">
-                {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="max-height:55px; max-width:160px; object-fit:contain; margin-bottom:5px;"><br>{% endif %}
+                {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="width:28px; height:28px; object-fit:contain; margin-bottom:5px;"><br>{% endif %}
                 <h5 class="fw-bold mb-1">{{ cfg.nome }}</h5>
                 <p class="small mb-1">CNPJ: {{ cfg.cnpj }}</p>
                 <p class="small mb-1">{{ cfg.endereco }}</p>
@@ -470,7 +470,7 @@ HTML_DASHBOARD = """
         <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-body text-center bg-white p-4">
             
             <div id="printableArea">
-                {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="max-height:55px; max-width:160px; object-fit:contain; margin-bottom:5px;"><br>{% endif %}
+                {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="width:28px; height:28px; object-fit:contain; margin-bottom:5px;"><br>{% endif %}
                 <h5 class="fw-bold mb-1">{{ cfg.nome }}</h5>
                 <p class="small mb-1">CNPJ: {{ cfg.cnpj }}</p>
                 <p class="small mb-1">{{ cfg.endereco }}</p>
