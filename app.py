@@ -1419,5 +1419,5 @@ def sincronizar_offline():
         for op in corpo.get('operacoes',[]):
             a,d=op.get('acao'),op.get('dados',{})
             if a=='entrada' and d.get('offline_id'):
-                conn.execute('''INSERT INTO veiculos(empresa_id,offline_id,placa,modelo,cor,valor,tipo_tarifa,numero_talao,hora_entrada,status) SELECT ?,?,?,?,?,?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM veiculos WHERE empresa_id=? AND offline_id=?)''',(eid,d['offline_id'],d.get('placa','').uppe
+                conn.execute(''')INSERT INTO veiculos(empresa_id,offline_id,placa,modelo,cor,valor,tipo_tarifa,numero_talao,hora_entrada,status) SELECT ?,?,?,?,?,?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM veiculos WHERE empresa_id=? AND offline_id=?)''',(eid,d['offline_id'],d.get('placa','').uppe
 Prévia truncada devido ao tamanho do arquivo
