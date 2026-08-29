@@ -505,7 +505,7 @@ HTML_DASHBOARD = """
 
             <script>
                 document.addEventListener("DOMContentLoaded", function() {
-                    new QRCode(document.getElementById("qrcodeEntrada"), { text: `{{ qr_entrada|safe }}`, width: 120, height: 120 });
+                    new QRCode(document.getElementById("qrcodeEntrada"), { text: `{{ qr_entrada|safe }}`, width: 70, height: 70 });
                     window.print();
                 });
             </script>
