@@ -348,6 +348,7 @@ HTML_DASHBOARD = """
             #modalEntradaSucesso .modal-dialog, #modalSaidaSucesso .modal-dialog { margin: 0 auto !important; min-height: 0 !important; transform: none !important; }
             #modalEntradaSucesso .modal-content, #modalSaidaSucesso .modal-content, #modalEntradaSucesso .modal-body, #modalSaidaSucesso .modal-body { border: 0 !important; padding: 0 !important; margin: 0 !important; }
             #printableArea { display: block !important; width: 54mm !important; margin: 0 auto !important; font-family: monospace; }
+            #modalEntradaSucesso button, #modalSaidaSucesso button { display: none !important; }
         }
     </style>
 </head>
@@ -450,11 +451,14 @@ HTML_DASHBOARD = """
         <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-body text-center bg-white p-4">
             
             <div id="printableArea">
-                {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="max-height:55px; max-width:160px; object-fit:contain; margin-bottom:5px;"><br>{% endif %}
-                <h5 class="fw-bold mb-1">{{ cfg.nome }}</h5>
+                <div style="display:flex; align-items:center; justify-content:center; gap:7px; margin-bottom:4px;">
+                    {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="width:28px; height:28px; object-fit:contain; flex-shrink:0;">{% endif %}
+                    <strong style="font-size:14px; line-height:1.1; max-width:150px; overflow-wrap:anywhere;">{{ cfg.nome }}</strong>
+                </div>
                 <p class="small mb-1">CNPJ: {{ cfg.cnpj }}</p>
                 <p class="small mb-1">{{ cfg.endereco }}</p>
-                <p class="small mb-2">Tel: {{ cfg.telefone }}</p>
+                <p class="small mb-1">WhatsApp/Celular: {{ cfg.telefone }}</p>
+                <p class="small mb-2">Horário: {{ cfg.horario }}</p>
                 <hr style="border-top: dashed 1px #000;">
                 <p class="fw-bold mb-1 text-uppercase">COMPROVANTE DE ENTRADA</p>
                 <p class="small text-danger fw-bold mb-1">TALÃO Nº: {{ talao_atual }}</p>
@@ -492,11 +496,14 @@ HTML_DASHBOARD = """
         <div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-body text-center bg-white p-4">
             
             <div id="printableArea">
-                {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="max-height:55px; max-width:160px; object-fit:contain; margin-bottom:5px;"><br>{% endif %}
-                <h5 class="fw-bold mb-1">{{ cfg.nome }}</h5>
+                <div style="display:flex; align-items:center; justify-content:center; gap:7px; margin-bottom:4px;">
+                    {% if cfg.logo %}<img src="/logo?v={{ cfg.id }}" alt="Logo" style="width:28px; height:28px; object-fit:contain; flex-shrink:0;">{% endif %}
+                    <strong style="font-size:14px; line-height:1.1; max-width:150px; overflow-wrap:anywhere;">{{ cfg.nome }}</strong>
+                </div>
                 <p class="small mb-1">CNPJ: {{ cfg.cnpj }}</p>
                 <p class="small mb-1">{{ cfg.endereco }}</p>
-                <p class="small mb-2">Tel: {{ cfg.telefone }}</p>
+                <p class="small mb-1">WhatsApp/Celular: {{ cfg.telefone }}</p>
+                <p class="small mb-2">Horário: {{ cfg.horario }}</p>
                 <hr style="border-top: dashed 1px #000;">
                 <p class="fw-bold mb-1 text-uppercase">COMPROVANTE DE SAÍDA (BAIXA)</p>
                 <p class="small mb-1">Placa: <strong>{{ saida_recente.placa }}</strong></p>
