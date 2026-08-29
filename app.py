@@ -470,19 +470,19 @@ HTML_DASHBOARD = """
                 <table style="width:100%; border-collapse:collapse; margin:0 0 4px 0;">
                     <tr>
                         {% if cfg.logo %}
-                        <td style="width:32px; text-align:center; vertical-align:middle;">
+                        <td style="width:28px; padding:0 4px 0 0; text-align:center; vertical-align:top;">
                             <img src="/logo?v={{ cfg.id }}" alt="Logo" style="width:24px; height:24px; object-fit:contain; display:block;">
                         </td>
                         {% endif %}
-                        <td style="text-align:center; vertical-align:middle; font-size:10px; line-height:1.1; font-weight:bold; overflow-wrap:anywhere; word-break:break-word;">
-                            {{ cfg.nome }}
+                        <td style="padding:0; text-align:left; vertical-align:top; font-size:10px; line-height:1.15; overflow-wrap:anywhere; word-break:break-word;">
+                            <div style="font-weight:bold;">{{ cfg.nome }}</div>
+                            <div>CNPJ: {{ cfg.cnpj }}</div>
+                            <div>Endereço: {{ cfg.endereco }}</div>
+                            <div>WhatsApp/Celular: {{ cfg.telefone }}</div>
+                            <div>Horário: {{ cfg.horario }}</div>
                         </td>
                     </tr>
                 </table>
-                <p class="small mb-1">CNPJ: {{ cfg.cnpj }}</p>
-                <p class="small mb-1">{{ cfg.endereco }}</p>
-                <p class="small mb-1">WhatsApp/Celular: {{ cfg.telefone }}</p>
-                <p class="small mb-2">Horário: {{ cfg.horario }}</p>
                 <hr style="border-top: dashed 1px #000;">
                 <p class="fw-bold mb-1 text-uppercase">COMPROVANTE DE ENTRADA</p>
                 <p class="small text-danger fw-bold mb-1">TALÃO Nº: {{ talao_atual }}</p>
@@ -523,19 +523,19 @@ HTML_DASHBOARD = """
                 <table style="width:100%; border-collapse:collapse; margin:0 0 4px 0;">
                     <tr>
                         {% if cfg.logo %}
-                        <td style="width:32px; text-align:center; vertical-align:middle;">
+                        <td style="width:28px; padding:0 4px 0 0; text-align:center; vertical-align:top;">
                             <img src="/logo?v={{ cfg.id }}" alt="Logo" style="width:24px; height:24px; object-fit:contain; display:block;">
                         </td>
                         {% endif %}
-                        <td style="text-align:center; vertical-align:middle; font-size:10px; line-height:1.1; font-weight:bold; overflow-wrap:anywhere; word-break:break-word;">
-                            {{ cfg.nome }}
+                        <td style="padding:0; text-align:left; vertical-align:top; font-size:10px; line-height:1.15; overflow-wrap:anywhere; word-break:break-word;">
+                            <div style="font-weight:bold;">{{ cfg.nome }}</div>
+                            <div>CNPJ: {{ cfg.cnpj }}</div>
+                            <div>Endereço: {{ cfg.endereco }}</div>
+                            <div>WhatsApp/Celular: {{ cfg.telefone }}</div>
+                            <div>Horário: {{ cfg.horario }}</div>
                         </td>
                     </tr>
                 </table>
-                <p class="small mb-1">CNPJ: {{ cfg.cnpj }}</p>
-                <p class="small mb-1">{{ cfg.endereco }}</p>
-                <p class="small mb-1">WhatsApp/Celular: {{ cfg.telefone }}</p>
-                <p class="small mb-2">Horário: {{ cfg.horario }}</p>
                 <hr style="border-top: dashed 1px #000;">
                 <p class="fw-bold mb-1 text-uppercase">COMPROVANTE DE SAÍDA (BAIXA)</p>
                 <p class="small mb-1">Placa: <strong>{{ saida_recente.placa }}</strong></p>
