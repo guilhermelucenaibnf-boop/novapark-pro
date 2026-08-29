@@ -347,7 +347,7 @@ HTML_DASHBOARD = """
             body > #modalEntradaSucesso, body > #modalSaidaSucesso { display: block !important; position: static !important; background: none !important; }
             #modalEntradaSucesso .modal-dialog, #modalSaidaSucesso .modal-dialog { margin: 0 auto !important; min-height: 0 !important; transform: none !important; }
             #modalEntradaSucesso .modal-content, #modalSaidaSucesso .modal-content, #modalEntradaSucesso .modal-body, #modalSaidaSucesso .modal-body { border: 0 !important; padding: 0 !important; margin: 0 !important; }
-            #printableArea { display: block !important; width: 50mm !important; max-width: 50mm !important; margin: 0 auto !important; padding: 0 2mm !important; box-sizing: border-box !important; font-family: monospace; font-size: 10px !important; line-height: 1.15 !important; overflow: hidden !important; }
+            #printableArea { display: block !important; width: 50mm !important; max-width: 50mm !important; margin: 0 auto !important; padding: 0 2mm !important; box-sizing: border-box !important; font-family: monospace; font-size: 10px !important; line-height: 1.15 !important; overflow: visible !important; height: auto !important; }
             #modalEntradaSucesso button, #modalSaidaSucesso button { display: none !important; }
             #printableArea p, #printableArea .small {
                 font-size: 10px !important;
