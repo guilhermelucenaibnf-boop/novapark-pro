@@ -347,7 +347,7 @@ HTML_DASHBOARD = """
             body > #modalEntradaSucesso, body > #modalSaidaSucesso { display: block !important; position: static !important; background: none !important; }
             #modalEntradaSucesso .modal-dialog, #modalSaidaSucesso .modal-dialog { margin: 0 auto !important; min-height: 0 !important; transform: none !important; }
             #modalEntradaSucesso .modal-content, #modalSaidaSucesso .modal-content, #modalEntradaSucesso .modal-body, #modalSaidaSucesso .modal-body { border: 0 !important; padding: 0 !important; margin: 0 !important; }
-            #printableArea { display: block !important; width: 54mm !important; margin: 0 auto !important; font-family: monospace; }
+            #printableArea { display: block !important; width: 50mm !important; max-width: 50mm !important; margin: 0 auto !important; padding: 0 2mm !important; box-sizing: border-box !important; font-family: monospace; overflow: hidden !important; }
             #modalEntradaSucesso button, #modalSaidaSucesso button { display: none !important; }
         }
     </style>
@@ -458,7 +458,7 @@ HTML_DASHBOARD = """
                             <img src="/logo?v={{ cfg.id }}" alt="Logo" style="width:28px; height:28px; object-fit:contain; display:block;">
                         </td>
                         {% endif %}
-                        <td style="text-align:center; vertical-align:middle; font-size:12px; line-height:1.1; font-weight:bold; overflow-wrap:anywhere;">
+                        <td style="text-align:center; vertical-align:middle; font-size:10px; line-height:1.1; font-weight:bold; overflow-wrap:anywhere; word-break:break-word;">
                             {{ cfg.nome }}
                         </td>
                     </tr>
@@ -511,7 +511,7 @@ HTML_DASHBOARD = """
                             <img src="/logo?v={{ cfg.id }}" alt="Logo" style="width:28px; height:28px; object-fit:contain; display:block;">
                         </td>
                         {% endif %}
-                        <td style="text-align:center; vertical-align:middle; font-size:12px; line-height:1.1; font-weight:bold; overflow-wrap:anywhere;">
+                        <td style="text-align:center; vertical-align:middle; font-size:10px; line-height:1.1; font-weight:bold; overflow-wrap:anywhere; word-break:break-word;">
                             {{ cfg.nome }}
                         </td>
                     </tr>
