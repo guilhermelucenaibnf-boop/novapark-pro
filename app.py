@@ -345,7 +345,7 @@ HTML_DASHBOARD = """
         @media print {
             body * { visibility: hidden; }
             #printableArea, #printableArea * { visibility: visible; }
-            #printableArea { position: absolute; left: 0; top: 0; width: 100%; font-family: monospace; }
+            #printableArea { position: fixed; left: 0; top: 0; width: 100%; font-family: monospace; }
         }
     </style>
 </head>
