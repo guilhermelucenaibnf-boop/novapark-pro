@@ -470,8 +470,8 @@ HTML_DASHBOARD = """
                 <table style="width:100%; border-collapse:collapse; margin:0 0 4px 0;">
                     <tr>
                         {% if cfg.logo %}
-                        <td style="width:28px; padding:0 4px 0 0; text-align:center; vertical-align:top;">
-                            <img src="/logo?v={{ cfg.id }}" alt="Logo" style="width:24px; height:24px; object-fit:contain; display:block;">
+                        <td style="width:32px; padding:0 5px 0 0; text-align:center; vertical-align:top;">
+                            <img src="/logo?v={{ cfg.id }}" alt="Logo" style="width:28px; height:28px; object-fit:contain; display:block; margin:0 auto;">
                         </td>
                         {% endif %}
                         <td style="padding:0; text-align:left; vertical-align:top; font-size:10px; line-height:1.15; overflow-wrap:anywhere; word-break:break-word;">
@@ -523,8 +523,8 @@ HTML_DASHBOARD = """
                 <table style="width:100%; border-collapse:collapse; margin:0 0 4px 0;">
                     <tr>
                         {% if cfg.logo %}
-                        <td style="width:28px; padding:0 4px 0 0; text-align:center; vertical-align:top;">
-                            <img src="/logo?v={{ cfg.id }}" alt="Logo" style="width:24px; height:24px; object-fit:contain; display:block;">
+                        <td style="width:32px; padding:0 5px 0 0; text-align:center; vertical-align:top;">
+                            <img src="/logo?v={{ cfg.id }}" alt="Logo" style="width:28px; height:28px; object-fit:contain; display:block; margin:0 auto;">
                         </td>
                         {% endif %}
                         <td style="padding:0; text-align:left; vertical-align:top; font-size:10px; line-height:1.15; overflow-wrap:anywhere; word-break:break-word;">
