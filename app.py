@@ -343,9 +343,11 @@ HTML_DASHBOARD = """
     <style>
         .btn-grid { height: 75px; font-weight: bold; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 6px; border: none; width: 100%; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         @media print {
-            body * { visibility: hidden; }
-            #printableArea, #printableArea * { visibility: visible; }
-            #printableArea { width: 100%; font-family: monospace; }
+            body > * { display: none !important; }
+            body > #modalEntradaSucesso, body > #modalSaidaSucesso { display: block !important; position: static !important; background: none !important; }
+            #modalEntradaSucesso .modal-dialog, #modalSaidaSucesso .modal-dialog { margin: 0 auto !important; min-height: 0 !important; transform: none !important; }
+            #modalEntradaSucesso .modal-content, #modalSaidaSucesso .modal-content, #modalEntradaSucesso .modal-body, #modalSaidaSucesso .modal-body { border: 0 !important; padding: 0 !important; margin: 0 !important; }
+            #printableArea { display: block !important; width: 54mm !important; margin: 0 auto !important; font-family: monospace; }
         }
     </style>
 </head>
