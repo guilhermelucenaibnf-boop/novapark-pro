@@ -347,8 +347,24 @@ HTML_DASHBOARD = """
             body > #modalEntradaSucesso, body > #modalSaidaSucesso { display: block !important; position: static !important; background: none !important; }
             #modalEntradaSucesso .modal-dialog, #modalSaidaSucesso .modal-dialog { margin: 0 auto !important; min-height: 0 !important; transform: none !important; }
             #modalEntradaSucesso .modal-content, #modalSaidaSucesso .modal-content, #modalEntradaSucesso .modal-body, #modalSaidaSucesso .modal-body { border: 0 !important; padding: 0 !important; margin: 0 !important; }
-            #printableArea { display: block !important; width: 50mm !important; max-width: 50mm !important; margin: 0 auto !important; padding: 0 2mm !important; box-sizing: border-box !important; font-family: monospace; overflow: hidden !important; }
+            #printableArea { display: block !important; width: 50mm !important; max-width: 50mm !important; margin: 0 auto !important; padding: 0 2mm !important; box-sizing: border-box !important; font-family: monospace; font-size: 10px !important; line-height: 1.15 !important; overflow: hidden !important; }
             #modalEntradaSucesso button, #modalSaidaSucesso button { display: none !important; }
+            #printableArea p, #printableArea .small {
+                font-size: 10px !important;
+                line-height: 1.15 !important;
+                margin-top: 2px !important;
+                margin-bottom: 2px !important;
+            }
+            #printableArea .fs-5 {
+                font-size: 11px !important;
+                line-height: 1.15 !important;
+            }
+            #printableArea hr {
+                margin: 4px 0 !important;
+            }
+            #printableArea img {
+                max-width: 100% !important;
+            }
         }
     </style>
 </head>
@@ -455,7 +471,7 @@ HTML_DASHBOARD = """
                     <tr>
                         {% if cfg.logo %}
                         <td style="width:32px; text-align:center; vertical-align:middle;">
-                            <img src="/logo?v={{ cfg.id }}" alt="Logo" style="width:28px; height:28px; object-fit:contain; display:block;">
+                            <img src="/logo?v={{ cfg.id }}" alt="Logo" style="width:24px; height:24px; object-fit:contain; display:block;">
                         </td>
                         {% endif %}
                         <td style="text-align:center; vertical-align:middle; font-size:10px; line-height:1.1; font-weight:bold; overflow-wrap:anywhere; word-break:break-word;">
@@ -489,7 +505,7 @@ HTML_DASHBOARD = """
 
             <script>
                 document.addEventListener("DOMContentLoaded", function() {
-                    new QRCode(document.getElementById("qrcodeEntrada"), { text: `{{ qr_entrada|safe }}`, width: 140, height: 140 });
+                    new QRCode(document.getElementById("qrcodeEntrada"), { text: `{{ qr_entrada|safe }}`, width: 120, height: 120 });
                     window.print();
                 });
             </script>
@@ -508,7 +524,7 @@ HTML_DASHBOARD = """
                     <tr>
                         {% if cfg.logo %}
                         <td style="width:32px; text-align:center; vertical-align:middle;">
-                            <img src="/logo?v={{ cfg.id }}" alt="Logo" style="width:28px; height:28px; object-fit:contain; display:block;">
+                            <img src="/logo?v={{ cfg.id }}" alt="Logo" style="width:24px; height:24px; object-fit:contain; display:block;">
                         </td>
                         {% endif %}
                         <td style="text-align:center; vertical-align:middle; font-size:10px; line-height:1.1; font-weight:bold; overflow-wrap:anywhere; word-break:break-word;">
