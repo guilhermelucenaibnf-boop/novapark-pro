@@ -1436,8 +1436,8 @@ def manifest():
 @app.route('/sw.js')
 def service_worker():
     js = """
-const C='novapark-pwa-v3';
-self.addEventListener('install',e=>e.waitUntil(caches.open(C).then(c=>c.addAll(['/offline','/manifest.json'])).then(()=>self.skipWaiting())));
+const C='novapark-pwa-v4';
+self.addEventListener('install',e=>e.waitUntil(caches.open(C).then(c=>c.addAll(['/offline','/manifest.json','/static/js/qrcode.min.js'])).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',e=>{if(e.request.method==='GET')e.respondWith(fetch(e.request).catch(()=>caches.match(e.request).then(r=>r||caches.match('/offline'))));});
 """
