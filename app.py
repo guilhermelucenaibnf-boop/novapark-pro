@@ -1436,8 +1436,8 @@ def manifest():
 @app.route('/sw.js')
 def service_worker():
     js = """
-const C='novapark-pwa-v4';
-self.addEventListener('install',e=>e.waitUntil(caches.open(C).then(c=>c.addAll(['/offline','/manifest.json','/static/js/qrcode.min.js'])).then(()=>self.skipWaiting())));
+const C='novapark-pwa-v5';
+self.addEventListener('install',e=>e.waitUntil(caches.open(C).then(c=>c.addAll(['/offline','/manifest.json','/static/js/qrcode.min.js','/static/js/html5-qrcode.min.js'])).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',e=>{if(e.request.method==='GET')e.respondWith(fetch(e.request).catch(()=>caches.match(e.request).then(r=>r||caches.match('/offline'))));});
 """
@@ -1445,14 +1445,61 @@ self.addEventListener('fetch',e=>{if(e.request.method==='GET')e.respondWith(fetc
 
 HTML_OFFLINE = r'''<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GLPPARK Offline</title><link rel="manifest" href="/manifest.json"><meta name="theme-color" content="#d35400"><style>
 *{box-sizing:border-box}body{margin:0;background:#f3f4f6;font:15px Arial;color:#222}.top{background:#d35400;color:#fff;padding:11px;text-align:center;font-weight:bold;position:sticky;top:0;z-index:2}.rede{padding:7px;text-align:center;background:#6c757d;color:white;font-size:12px}.wrap{max-width:720px;margin:auto;padding:12px}.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:12px}.btn{border:0;border-radius:7px;padding:12px 7px;color:#fff;font-weight:bold;background:#34495e}.green{background:#198754}.red{background:#dc3545}.orange{background:#e67e22}.card{display:none;background:white;border-radius:10px;padding:14px;margin-bottom:12px;box-shadow:0 2px 7px #0002}.card.on{display:block}label{display:block;margin-top:9px;font-weight:bold}input,select{width:100%;padding:11px;border:1px solid #ccc;border-radius:7px;margin-top:4px;font-size:16px}.full{width:100%;margin-top:11px}.item{border:1px solid #ddd;border-radius:7px;padding:10px;margin:8px 0}.muted{color:#666;font-size:12px}.logo{max-height:48px;max-width:140px;vertical-align:middle}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}@media print{body *{visibility:hidden}#recibo,#recibo *{visibility:visible}#recibo{display:block;position:absolute;left:0;top:0;width:100%;font-family:monospace;box-shadow:none}.no-print{display:none!important}}
-</style><script src="/static/js/qrcode.min.js"></script></head><body><div class="top"><img id="topLogo" class="logo" hidden> <span id="topNome">GLPPARK</span></div><div id="rede" class="rede">Modo offline</div><div class="wrap"><div class="tabs"><button class="btn green" onclick="aba('entrada')">ENTRADA</button><button class="btn red" onclick="aba('patio')">PÁTIO/SAÍDA</button><button id="configBtn" class="btn" onclick="aba('config')">CONFIG</button></div>
+</style><script src="/static/js/qrcode.min.js"></script><script src="/static/js/html5-qrcode.min.js"></script></head><body><div class="top"><img id="topLogo" class="logo" hidden> <span id="topNome">GLPPARK</span></div><div id="rede" class="rede">Modo offline</div><div class="wrap"><div class="tabs"><button class="btn green" onclick="aba('entrada')">ENTRADA</button><button class="btn red" onclick="aba('patio')">PÁTIO/SAÍDA</button><button id="configBtn" class="btn" onclick="aba('config')">CONFIG</button></div>
 <section id="entrada" class="card on"><h3>Entrada de veículo</h3><label>Placa</label><input id="placa" maxlength="8" autocomplete="off"><label>Modelo</label><input id="modelo"><label>Cor</label><input id="cor"><label>Forma de cobrança</label><select id="tipo"><option value="diaria">Diária</option><option value="van">Van/Caminhão</option><option value="pernoite">Pernoite</option><option value="hora">Hora e fração</option><option value="hora_tabela">Tabela por horas (1h/2h/3h/4h)</option><option value="mensalista">Mensalista</option></select><button class="btn green full" onclick="registrarEntrada()">Registrar e imprimir</button></section>
-<section id="patio" class="card"><h3>Veículos no pátio</h3><div id="lista"></div></section>
+<section id="patio" class="card"><h3>Veículos no pátio</h3><button class="btn green full" onclick="abrirScannerOffline()">📷 Ler QR Code — Câmera Traseira</button><div id="scannerOffline" style="display:none;width:100%;margin-top:10px"></div><button id="fecharScannerOffline" class="btn red full" style="display:none" onclick="fecharScannerOffline()">Fechar câmera</button><div id="lista"></div></section>
 <section id="config" class="card"><h3>Configurações</h3><label>Nome</label><input id="cNome"><label>CNPJ</label><input id="cCnpj"><label>Endereço</label><input id="cEndereco"><label>Telefone</label><input id="cTelefone"><label>Horário</label><input id="cHorario"><div class="grid"><div><label>Diária</label><input id="cDiaria" type="number" step=".01"></div><div><label>Van/Caminhão</label><input id="cVan" type="number" step=".01"></div></div><label>Pernoite</label><input id="cPernoite" type="number" step=".01"><div class="grid"><div><label>1ª hora</label><input id="cHora" type="number" step=".01"></div><div><label>Fração</label><input id="cFracao" type="number" step=".01"></div></div><label>Min. fração</label><input id="cMinutosFracao" type="number"><h4>Tabela por Horas</h4><div class="grid"><div><label>1 hora</label><input id="cTabela1h" type="number" step=".01"></div><div><label>2 horas</label><input id="cTabela2h" type="number" step=".01"></div><div><label>3 horas</label><input id="cTabela3h" type="number" step=".01"></div><div><label>4 horas</label><input id="cTabela4h" type="number" step=".01"></div></div><label>Perda do talão</label><input id="cTaxaTalao" type="number" step=".01"><label>Total de vagas</label><input id="cTotalVagas" type="number"><label>Mensagem</label><input id="cMensagem"><label>Impressora</label><select id="cImpressora"><option>Automática / Genérica ESC/POS</option><option>KA-1445</option><option>Thermer Bluetooth</option><option>Elgin</option><option>Bematech</option><option>Epson</option><option>Knup</option><option>Goldensky</option><option>Goojprt</option><option>Rongta</option><option>Xprinter</option><option>Zjiang</option><option>Datec</option><option>Exbom</option><option>MPT-II / MPT-III</option><option>Sweda</option><option>Tanca</option><option>Zebra</option><option>Bixolon</option><option>Star Micronics</option><option>Sewoo</option><option>Outra ESC/POS</option></select><label>Largura do papel</label><select id="cImpressoraLargura"><option value="58">58 mm</option><option value="80">80 mm</option></select><label>Logo</label><input id="cLogo" type="file" accept="image/*"><button class="btn full" onclick="salvarConfig()">Salvar configurações</button></section>
 <section id="recibo" class="card"><div id="reciboTexto"></div><button class="btn full no-print" style="background:#111" onclick="print()">Imprimir comprovante</button><button class="btn full no-print" onclick="aba('patio')">Fechar</button></section></div><script>
 const empresa=localStorage.getItem('novapark_empresa_atual')||'sem_empresa',KD='novapark_dados_'+empresa,KF='novapark_fila_'+empresa,KC='novapark_config_'+empresa;let veiculos=JSON.parse(localStorage.getItem(KD)||'[]'),fila=JSON.parse(localStorage.getItem(KF)||'[]'),cfg=JSON.parse(localStorage.getItem(KC)||'{"nome":"GLPPARK","diaria":50,"van":30,"pernoite":40,"hora":10,"fracao":5,"minutos_fracao":30,"tabela_1h":10,"tabela_2h":20,"tabela_3h":30,"tabela_4h":40,"taxa_talao":30,"total_vagas":50,"impressora":"Automática / Genérica ESC/POS","impressora_largura":58}');const $=id=>document.getElementById(id);function persistir(){localStorage.setItem(KD,JSON.stringify(veiculos));localStorage.setItem(KF,JSON.stringify(fila))}function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2)}function data(s){let d=new Date(s);return isNaN(d)?s:d.toLocaleString('pt-BR')}function moeda(n){return Number(n||0).toFixed(2).replace('.',',')}function aba(id){document.querySelectorAll('.card').forEach(x=>x.classList.remove('on'));$(id).classList.add('on');if(id==='patio')listar()}
 function aplicar(){['Nome','Cnpj','Endereco','Telefone','Horario','Mensagem','Impressora'].forEach(x=>$('c'+x).value=cfg[x.toLowerCase()]||'');$('cDiaria').value=cfg.diaria||0;$('cVan').value=cfg.van||0;$('cPernoite').value=cfg.pernoite||0;$('cHora').value=cfg.hora??10;$('cFracao').value=cfg.fracao??5;$('cMinutosFracao').value=cfg.minutos_fracao??30;$('cTabela1h').value=cfg.tabela_1h??10;$('cTabela2h').value=cfg.tabela_2h??20;$('cTabela3h').value=cfg.tabela_3h??30;$('cTabela4h').value=cfg.tabela_4h??40;$('cTaxaTalao').value=cfg.taxa_talao??30;$('cTotalVagas').value=cfg.total_vagas??50;$('cImpressoraLargura').value=String(cfg.impressora_largura||58);$('topNome').textContent=cfg.nome||'GLPPARK';if(cfg.logo){$('topLogo').src=cfg.logo;$('topLogo').hidden=false}if(cfg.perfil!=='admin'){$('configBtn').remove();$('config').remove();document.querySelector('.tabs').style.gridTemplateColumns='1fr 1fr'}}
 function registrarEntrada(){let p=$('placa').value.trim().toUpperCase();if(!p)return alert('Digite a placa.');if(veiculos.some(v=>v.placa===p&&v.status==='ATIVO'))return alert('Essa placa já está no pátio.');let t=(cfg.placas_mensalistas||[]).includes(p)?'mensalista':$('tipo').value,v={offline_id:uid(),placa:p,modelo:$('modelo').value.trim(),cor:$('cor').value.trim(),tipo_tarifa:t,valor:t==='mensalista'?0:Number(cfg[t]||0),numero_talao:String(Math.floor(10000+Math.random()*90000)),hora_entrada:new Date().toISOString(),status:'ATIVO'};veiculos.push(v);fila.push({acao:'entrada',dados:v});persistir();comprovante(v,'ENTRADA');$('placa').value=$('modelo').value=$('cor').value=''}
+let leitorOffline=null,scannerOfflineProcessando=false;
+async function abrirScannerOffline(){
+    if(typeof Html5Qrcode==='undefined')return alert('Leitor de QR Code offline não disponível.');
+    $('scannerOffline').style.display='block';
+    $('fecharScannerOffline').style.display='block';
+    scannerOfflineProcessando=false;
+    leitorOffline=new Html5Qrcode('scannerOffline');
+    try{
+        await leitorOffline.start(
+            {facingMode:{exact:'environment'}},
+            {fps:10,qrbox:{width:250,height:250}},
+            async texto=>{
+                if(scannerOfflineProcessando)return;
+                scannerOfflineProcessando=true;
+                let placa=String(texto||'').trim().toUpperCase();
+                let v=veiculos.find(x=>x.status==='ATIVO'&&String(x.placa||'').toUpperCase()===placa);
+                if(!v){
+                    scannerOfflineProcessando=false;
+                    return alert('Veículo do QR Code não encontrado no pátio.');
+                }
+                await fecharScannerOffline();
+                darSaida(v.offline_id);
+            },
+            ()=>{}
+        );
+    }catch(e){
+        try{
+            if(leitorOffline)await leitorOffline.clear();
+        }catch(_e){}
+        leitorOffline=null;
+        $('scannerOffline').style.display='none';
+        $('fecharScannerOffline').style.display='none';
+        alert('Não foi possível abrir a câmera traseira. Verifique a permissão da câmera.');
+    }
+}
+async function fecharScannerOffline(){
+    if(leitorOffline){
+        try{
+            if(leitorOffline.isScanning)await leitorOffline.stop();
+            await leitorOffline.clear();
+        }catch(_e){}
+        leitorOffline=null;
+    }
+    $('scannerOffline').style.display='none';
+    $('fecharScannerOffline').style.display='none';
+    scannerOfflineProcessando=false;
+}
 function listar(){let a=veiculos.filter(v=>v.status==='ATIVO');$('lista').innerHTML=a.length?a.map(v=>`<div class="item"><b>${v.placa}</b> — ${v.modelo||'Modelo não informado'}<div class="muted">Entrada: ${data(v.hora_entrada)} | Talão: ${v.numero_talao||'-'}</div><button class="btn red full" onclick="darSaida('${v.offline_id}')">Dar saída</button><button class="btn orange full" onclick="comprovantePorId('${v.offline_id}')">Reimprimir</button></div>`).join(''):'<p class="muted">Nenhum veículo no pátio.</p>'}
 function darSaida(id){let v=veiculos.find(x=>x.offline_id===id);if(!v)return;let agora=new Date(),mins=(agora-new Date(v.hora_entrada))/60000,bruto=0;if(mins>15&&v.tipo_tarifa!=='mensalista'){if(v.tipo_tarifa==='hora'){bruto=Number(cfg.hora||0);if(mins>60)bruto+=Math.ceil((mins-60)/Number(cfg.minutos_fracao||30))*Number(cfg.fracao||0);if(Number(cfg.diaria||0)>0)bruto=Math.min(bruto,Number(cfg.diaria))}else if(v.tipo_tarifa==='hora_tabela'){bruto=mins<=60?Number(cfg.tabela_1h||0):mins<=120?Number(cfg.tabela_2h||0):mins<=180?Number(cfg.tabela_3h||0):mins<=240?Number(cfg.tabela_4h||0):Number(cfg.diaria||0);if(Number(cfg.diaria||0)>0)bruto=Math.min(bruto,Number(cfg.diaria))}else bruto=Number(v.valor)}let perdido=confirm('O talão foi perdido?');if(perdido)bruto+=Number(cfg.taxa_talao||0);let desconto=cfg.perfil==='admin'?Number(prompt('Desconto autorizado em R$ (0 para nenhum):','0')||0):0,pagamento=prompt('Pagamento: Dinheiro, Pix, Cartão de débito ou Cartão de crédito','Dinheiro')||'Dinheiro';v.hora_saida=agora.toISOString();v.valor_total=Math.max(0,bruto-desconto);v.forma_pagamento=pagamento;v.desconto=desconto;v.talao_perdido=perdido?1:0;v.status='FINALIZADO';fila.push({acao:'saida',dados:{offline_id:id,hora_saida:v.hora_saida,valor_total:v.valor_total,forma_pagamento:pagamento,desconto:desconto,talao_perdido:v.talao_perdido}});persistir();comprovante(v,'SAÍDA')}
 function comprovantePorId(id){let v=veiculos.find(x=>x.offline_id===id);if(v)comprovante(v,v.status==='ATIVO'?'ENTRADA':'SAÍDA')}function comprovante(v,t){$('reciboTexto').innerHTML=`<div style="text-align:center">${cfg.logo?`<img class="logo" src="${cfg.logo}"><br>`:''}<b>${cfg.nome||'GLPPARK'}</b><br><small>${cfg.cnpj||''}<br>${cfg.endereco||''}<br>${cfg.telefone||''}</small></div><hr><b>COMPROVANTE DE ${t}</b><p>Placa: <b>${v.placa}</b><br>Modelo: ${v.modelo||'-'}<br>Cor: ${v.cor||'-'}<br>Talão: ${v.numero_talao||'-'}<br>Entrada: ${data(v.hora_entrada)}${t==='SAÍDA'?`<br>Saída: ${data(v.hora_saida)}<br><b>Total: R$ ${moeda(v.valor_total)}</b>`:''}</p>${t==='ENTRADA'?'<div id="qrOffline" style="display:flex;justify-content:center;margin:10px 0"></div>':''}<hr><div style="text-align:center">${cfg.mensagem||''}</div>`;aba('recibo');if(t==='ENTRADA'){let q=$('qrOffline');if(q&&typeof QRCode!=='undefined')new QRCode(q,{text:v.placa,width:120,height:120})}setTimeout(()=>print(),500)}
