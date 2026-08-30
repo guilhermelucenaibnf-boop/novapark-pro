@@ -476,8 +476,8 @@ HTML_DASHBOARD = """
                         {% endif %}
                         <td style="padding:0; text-align:left; vertical-align:top; font-size:10px; line-height:1.15; overflow-wrap:anywhere; word-break:break-word;">
                             <div style="font-weight:bold; font-size:14px;">{{ cfg.nome }}</div>
-                            <div>CNPJ: {{ cfg.cnpj }}</div>
-                            <div>Endereço: {{ cfg.endereco }}</div>
+                            <div style="font-size:9px; white-space:nowrap;">CNPJ: {{ cfg.cnpj }}</div>
+                            <div style="font-size:9px; white-space:normal; word-break:normal; overflow-wrap:normal;">Endereço: {{ cfg.endereco }}</div>
                             <div>WhatsApp/Celular: {{ cfg.telefone }}</div>
                             <div>Horário: {{ cfg.horario }}</div>
                         </td>
@@ -531,8 +531,8 @@ HTML_DASHBOARD = """
                         {% endif %}
                         <td style="padding:0; text-align:left; vertical-align:top; font-size:10px; line-height:1.15; overflow-wrap:anywhere; word-break:break-word;">
                             <div style="font-weight:bold; font-size:14px;">{{ cfg.nome }}</div>
-                            <div>CNPJ: {{ cfg.cnpj }}</div>
-                            <div>Endereço: {{ cfg.endereco }}</div>
+                            <div style="font-size:9px; white-space:nowrap;">CNPJ: {{ cfg.cnpj }}</div>
+                            <div style="font-size:9px; white-space:normal; word-break:normal; overflow-wrap:normal;">Endereço: {{ cfg.endereco }}</div>
                             <div>WhatsApp/Celular: {{ cfg.telefone }}</div>
                             <div>Horário: {{ cfg.horario }}</div>
                         </td>
