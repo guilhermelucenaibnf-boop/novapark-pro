@@ -497,7 +497,9 @@ HTML_DASHBOARD = """
                 <hr style="border-top: dashed 1px #000;">
                 <p class="small text-muted mb-1"><strong>Anúncios / Avisos:</strong></p>
                 {% for a in anuncios %}
+                {% if a.texto and a.texto.strip() and a.texto.strip() != '-' %}
                 <p class="small mb-1">- {{ a.texto }}</p>
+                {% endif %}
                 {% endfor %}
                 {% endif %}
                 <hr style="border-top: dashed 1px #000;">
@@ -548,7 +550,9 @@ HTML_DASHBOARD = """
                 <hr style="border-top: dashed 1px #000;">
                 <p class="small text-muted mb-1"><strong>Anúncios / Avisos:</strong></p>
                 {% for a in anuncios %}
+                {% if a.texto and a.texto.strip() and a.texto.strip() != '-' %}
                 <p class="small mb-1">- {{ a.texto }}</p>
+                {% endif %}
                 {% endfor %}
                 {% endif %}
                 <hr style="border-top: dashed 1px #000;">
