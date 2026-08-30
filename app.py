@@ -475,7 +475,7 @@ HTML_DASHBOARD = """
                         </td>
                         {% endif %}
                         <td style="padding:0; text-align:left; vertical-align:top; font-size:10px; line-height:1.15; overflow-wrap:anywhere; word-break:break-word;">
-                            <div style="font-weight:bold;">{{ cfg.nome }}</div>
+                            <div style="font-weight:bold; font-size:14px;">{{ cfg.nome }}</div>
                             <div>CNPJ: {{ cfg.cnpj }}</div>
                             <div>Endereço: {{ cfg.endereco }}</div>
                             <div>WhatsApp/Celular: {{ cfg.telefone }}</div>
@@ -528,7 +528,7 @@ HTML_DASHBOARD = """
                         </td>
                         {% endif %}
                         <td style="padding:0; text-align:left; vertical-align:top; font-size:10px; line-height:1.15; overflow-wrap:anywhere; word-break:break-word;">
-                            <div style="font-weight:bold;">{{ cfg.nome }}</div>
+                            <div style="font-weight:bold; font-size:14px;">{{ cfg.nome }}</div>
                             <div>CNPJ: {{ cfg.cnpj }}</div>
                             <div>Endereço: {{ cfg.endereco }}</div>
                             <div>WhatsApp/Celular: {{ cfg.telefone }}</div>
