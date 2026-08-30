@@ -584,9 +584,22 @@ HTML_DASHBOARD = """
         </form>
 
         <script>
+            let qrProcessando = false;
+
             function onScanSuccess(decodedText) {
-                document.getElementById('placaScaneada').value = decodedText;
-                document.forms[document.forms.length - 1].submit();
+                if (qrProcessando) return;
+                qrProcessando = true;
+
+                const campo = document.getElementById('placaScaneada');
+                campo.value = decodedText;
+
+                const formulario = campo.closest('form');
+                if (formulario) {
+                    formulario.submit();
+                } else {
+                    qrProcessando = false;
+                    alert('Não foi possível processar a saída pelo QR Code.');
+                }
             }
             try {
                 let html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 225 });
